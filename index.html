@@ -2013,6 +2013,8 @@ const Sfx = {
       o.connect(g).connect(ctx.destination); o.start(t + dt); o.stop(t + dt + .08);
     });
   },
+  ducked: false,
+  duck(on) { this.ducked = on; },
   hiss(on) { if (this.nGain) this.nGain.gain.setTargetAtTime(on ? .018 : 0, this.ctx.currentTime, .05); },
   // Moteur V6 turbo synthétisé : harmoniques en dents de scie, saturation, filtre, sifflement du turbo,
   // + crissement des pneus et bruit de pluie
@@ -2041,8 +2043,9 @@ const Sfx = {
     e.o[0].frequency.setTargetAtTime(f, t, .02); e.o[1].frequency.setTargetAtTime(f * 2.01, t, .02); e.o[2].frequency.setTargetAtTime(f * .5, t, .02); e.o[3].frequency.setTargetAtTime(f * 3, t, .02);
     e.lp.frequency.setTargetAtTime(700 + thr * 2600 + rpm * .05, t, .04);
     e.tb.frequency.setTargetAtTime(2200 + rpm * .45, t, .05); e.tg.gain.setTargetAtTime(vol * thr * .006, t, .08);
-    e.out.gain.setTargetAtTime(vol * (.05 + thr * .07), t, .05);
-    e.sg.gain.setTargetAtTime(Math.min(.06, squeal * .08) * vol, t, .05);
+    const dk = this.ducked ? .12 : 1;
+    e.out.gain.setTargetAtTime(vol * dk * (.05 + thr * .07), t, .08);
+    e.sg.gain.setTargetAtTime(Math.min(.06, squeal * .08) * vol * dk, t, .05);
     e.rg.gain.setTargetAtTime(rain * .03, t, .3);
   },
   engineOff() { if (this.eng) { try { this.eng.o.forEach(o => o.stop()); this.eng.tb.stop(); this.eng.nz.stop(); this.eng.out.disconnect(); this.eng.sg.disconnect(); this.eng.rg.disconnect(); } catch (e) { } this.eng = null; } },
@@ -2133,7 +2136,7 @@ const Mic = {
     return true;
   },
   // relâchement : petite marge pour la fin du dernier mot, puis envoi immédiat
-  stop() { if (!this.gate) return; clearTimeout(this.relT); this.relT = setTimeout(() => this.release(), 380); },
+  stop() { if (!this.gate) return; clearTimeout(this.relT); this.relT = setTimeout(() => { this.release(); if (Game.prefs.micKeep === false) { this.keep = false; if (this.rec) try { this.rec.stop(); } catch (e) { } } }, 380); },
   release(forced) {
     if (!this.gate) return;
     const t = forced !== undefined ? forced : this.text();
@@ -2211,11 +2214,11 @@ const Radio = {
     this.el && this.el.classList.add('talk');
     const speak = m.speak !== false && this.prefs.voice && m.who !== 'me' && (m.who !== 'other' || this.prefs.others);
     const after = () => {
-      Sfx.hiss(false); if (speak) Sfx.beep(true);
+      Sfx.hiss(false); Sfx.duck(false); if (speak) Sfx.beep(true);
       this.el && this.el.classList.remove('talk');
       setTimeout(() => this.next(), m.q ? 120 : 350);
     };
-    if (speak) { Sfx.beep(false); Sfx.hiss(true); Speech.say(m.text, m.vr || (m.who === 'eng' || (m.who === 'me' && this.role === 'manager') ? 'eng' : 'drv'), c0(m), after); }
+    if (speak) { Sfx.beep(false); Sfx.duck(true); Speech.say(m.text, m.vr || (m.who === 'eng' || (m.who === 'me' && this.role === 'manager') ? 'eng' : 'drv'), c0(m), after); }
     else setTimeout(after, m.who === 'me' ? Math.min(1500, 500 + m.text.length * 12) : 900 + m.text.length * 35);
     function c0(m) { return m.car ? m.car.code : 'x'; }
   },
@@ -3178,7 +3181,7 @@ const Game = {
   save: null, setup: null, wk: null, race: null, world: null, role: 'manager', team: null, drv: null,
   speed: 1, paused: false, raf: 0, last: 0, uiT: 0, secAcc: 0, views: [], mons: [], trackCache: {}, ending: false, pilotView: 0,
   multi: false, remote: false, host: false, mp: null, boxComp: null,
-  prefs: Object.assign({ voice: true, others: true, readMine: false, sound: true, ai: true, quality: matchMedia('(pointer: coarse)').matches ? 1 : 2 }, Store.prefs()),
+  prefs: Object.assign({ micKeep: true, voice: true, others: true, readMine: false, sound: true, ai: true, quality: matchMedia('(pointer: coarse)').matches ? 1 : 2 }, Store.prefs()),
 };
 function setTeamVars(t) { document.documentElement.style.setProperty('--team', t.color); document.documentElement.style.setProperty('--team-ink', t.ink); }
 function show(id) { $$('.screen').forEach(s => s.classList.toggle('on', s.id === id)); window.scrollTo(0, 0); }
@@ -3810,6 +3813,8 @@ function settingsModal(onClose) {
         <div class="opt"><label for="st-ve">Voix de l'ingénieur</label><div style="display:flex;gap:6px;min-width:0"><select id="st-ve" class="btn" style="max-width:230px">${opts(p.voiceEng)}</select><button class="btn small" id="st-vet" aria-label="Écouter">▶</button></div></div>
         <div class="opt"><label for="st-vd">Voix du pilote</label><div style="display:flex;gap:6px;min-width:0"><select id="st-vd" class="btn" style="max-width:230px">${opts(p.voiceDrv)}</select><button class="btn small" id="st-vdt" aria-label="Écouter">▶</button></div></div>
         <p class="muted" style="font-size:13px;margin:0">${vs.length ? vs.length + ' voix françaises trouvées.' : 'Aucune voix française trouvée pour l\'instant.'} Pour des voix bien plus humaines sur iPad : <b>Réglages de l'iPad → Accessibilité → Contenu énoncé → Voix → Français</b>, puis télécharge une voix « Améliorée » ou « Premium » (par exemple Thomas, Audrey ou Aurélie). Reviens ici : elle apparaît avec une ★.</p>
+        <div class="opt"><label>Micro toujours prêt</label><div class="seg" id="st-mk"><button data-v="1" class="${p.micKeep !== false ? 'on' : ''}">Oui</button><button data-v="0" class="${p.micKeep === false ? 'on' : ''}">Non</button></div></div>
+        <p class="muted" style="font-size:13px;margin:0">Oui : pas de gel quand tu appuies sur 🎙. Si les voix sont hachées sur ton iPad, mets Non : les voix sont plus fluides, mais un court gel peut revenir à chaque appui.</p>
         <div class="opt"><label>Voix à la radio</label><div class="seg" id="st-v"><button data-v="1" class="${p.voice ? 'on' : ''}">Activées</button><button data-v="0" class="${!p.voice ? 'on' : ''}">Texte seul</button></div></div>
         <div class="opt"><label>Qualité graphique</label><div class="seg" id="st-q">${['Basse', 'Moyenne', 'Haute', 'Ultra'].map((x, i) => `<button data-v="${i}" class="${p.quality === i ? 'on' : ''}">${x}</button>`).join('')}</div></div>
         <p class="muted" style="font-size:13px;margin:0">Haute : ombres, herbe, public animé. Ultra : ombres et image plus fines, plus de décor (iPad récent ou ordinateur). Appliqué à la prochaine course.</p>
@@ -3824,6 +3829,7 @@ function settingsModal(onClose) {
     seg('st-v', v => p.voice = v === '1'); seg('st-q', v => p.quality = +v);
     seg('st-s', v => { p.sound = v === '1'; if (Game.raf) { Sfx.init(); p.sound ? Sfx.engineOn() : Sfx.engineOff(); } });
     seg('st-o', v => p.others = v === '1');
+    seg('st-mk', v => { p.micKeep = v === '1'; if (!p.micKeep && !Mic.gate) Mic.shutdown(); });
     $('#st-ok').onclick = () => { $('#modal').classList.remove('on'); onClose && onClose(); };
   };
   draw();
