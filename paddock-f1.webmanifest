@@ -1,0 +1,13 @@
+{
+  "name": "Paddock F1",
+  "short_name": "Paddock F1",
+  "start_url": "./",
+  "display": "fullscreen",
+  "orientation": "landscape",
+  "background_color": "#07090D",
+  "theme_color": "#07090D",
+  "icons": [
+    { "src": "paddock-f1-icon.png", "sizes": "180x180", "type": "image/png" },
+    { "src": "paddock-f1-icon-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}
