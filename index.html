@@ -165,7 +165,7 @@ table.std td.r, table.std th.r { text-align: right; }
 .cktxt input { flex: 1; min-width: 0; background: rgba(8, 10, 14, .88); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; }
 .radiodock { display: flex; gap: 8px; align-items: center; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 6px 8px; flex-wrap: wrap; }
 .radiodock input { flex: 1; min-width: 140px; background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; padding: 9px 10px; }
-.ptt { display: inline-flex; align-items: center; gap: 8px; border: 0; border-radius: 999px; background: var(--red); color: #fff; padding: 10px 16px; font-weight: 900; letter-spacing: .04em; user-select: none; -webkit-user-select: none; touch-action: none; }
+.ptt { -webkit-touch-callout: none; -webkit-user-select: none; display: inline-flex; align-items: center; gap: 8px; border: 0; border-radius: 999px; background: var(--red); color: #fff; padding: 10px 16px; font-weight: 900; letter-spacing: .04em; user-select: none; -webkit-user-select: none; touch-action: none; }
 .ptt.live { background: #fff; color: var(--red); box-shadow: 0 0 0 4px rgba(225, 6, 0, .5); animation: pulse 1s infinite; }
 @keyframes pulse { 50% { box-shadow: 0 0 0 9px rgba(225, 6, 0, .15); } }
 .quick { display: flex; gap: 5px; flex-wrap: wrap; }
@@ -212,8 +212,10 @@ table.std td.r, table.std th.r { text-align: right; }
 @keyframes rain { to { transform: translate(-8px, 46px); } }
 
 /* Radio façon TV */
-.radio-tv { position: absolute; left: 12px; bottom: 44px; width: min(460px, calc(100% - 24px)); pointer-events: none; transform: translateX(-12px); opacity: 0; transition: opacity .25s, transform .25s; z-index: 5; }
+.radio-tv { position: absolute; left: 12px; top: 40px; width: min(480px, calc(100% - 24px)); pointer-events: none; transform: translateY(-10px); opacity: 0; transition: opacity .25s, transform .25s; z-index: 5; }
 .radio-tv.show { opacity: 1; transform: none; }
+#ck-view .radio-tv { left: 50%; top: calc(env(safe-area-inset-top, 0px) + 100px); width: min(560px, calc(100% - 440px)); min-width: min(320px, calc(100% - 24px)); transform: translate(-50%, -10px); }
+#ck-view .radio-tv.show { transform: translate(-50%, 0); }
 .rt-head { display: flex; align-items: center; gap: 8px; background: rgba(6, 8, 12, .92); padding: 5px 10px 5px 0; border-radius: 6px 6px 0 0; width: max-content; max-width: 100%; }
 .rt-head .bar { width: 6px; align-self: stretch; background: var(--c); }
 .rt-head .lbl { font-weight: 900; font-size: 12px; letter-spacing: .14em; background: var(--red); color: #fff; padding: 1px 7px; border-radius: 3px; }
@@ -290,8 +292,7 @@ table.std td.r, table.std th.r { text-align: right; }
   .lights { top: 30%; }
   .tbtn[data-t="t"] { height: 34vh; } .tbtn { height: 30vh; font-size: 20px; }
   .lights i { width: 22px; height: 22px; }
-  .radio-tv { bottom: auto; top: 42%; left: 50%; transform: translateX(-50%); width: min(380px, 50vw); }
-  .radio-tv.show { transform: translateX(-50%); }
+  #ck-view .radio-tv { top: 64px; width: min(380px, 50vw); }
   .rt-text { font-size: 13px; }
 }
 
@@ -952,7 +953,7 @@ function getRenderer() {
     renderer.setSize(window.innerWidth, window.innerHeight, false);
     renderer.setScissorTest(true);
     renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap; renderer.shadowMap.autoUpdate = false;
-    renderer.toneMapping = THREE.NoToneMapping;
+    renderer.outputEncoding = THREE.sRGBEncoding; renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.0;
     window.addEventListener('resize', () => renderer.setSize(window.innerWidth, window.innerHeight, false));
   }
   return renderer;
@@ -1008,7 +1009,8 @@ function textures() {
   TEX.seats = canvasTex(256, 64, (g, w, h) => { g.fillStyle = '#2b2f36'; g.fillRect(0, 0, w, h); for (let x = 0; x < w; x += 8) for (let y = 0; y < h; y += 16) { g.fillStyle = Math.random() < .5 ? '#1f5fbf' : '#2a6fd6'; g.fillRect(x + 1, y + 4, 6, 10); } });
   TEX.windows = canvasTex(256, 256, (g, w, h) => { g.fillStyle = '#7d8590'; g.fillRect(0, 0, w, h); for (let y = 8; y < h; y += 24) for (let x = 6; x < w; x += 18) { g.fillStyle = Math.random() < .35 ? '#f6d98b' : '#2a3442'; g.fillRect(x, y, 11, 14); } });
   TEX.soft = canvasTex(64, 64, (g, w, h) => { const gr = g.createRadialGradient(32, 32, 0, 32, 32, 32); gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(1, 'rgba(255,255,255,0)'); g.fillStyle = gr; g.fillRect(0, 0, w, h); });
-  TEX.grassBlade = canvasTex(64, 64, (g, w, h) => { g.clearRect(0, 0, w, h); for (let i = 0; i < 40; i++) { const x = 4 + Math.random() * 56; g.strokeStyle = `hsl(${85 + Math.random() * 30},${45 + Math.random() * 20}%,${22 + Math.random() * 20}%)`; g.lineWidth = 2; g.beginPath(); g.moveTo(x, 64); g.quadraticCurveTo(x + (Math.random() - .5) * 10, 40, x + (Math.random() - .5) * 22, 10 + Math.random() * 30); g.stroke(); } });
+  TEX.grassBlade = canvasTex(64, 64, (g, w, h) => { g.clearRect(0, 0, w, h); for (let i = 0; i < 40; i++) { const x = 4 + Math.random() * 56; g.strokeStyle = `hsl(${88 + Math.random() * 22},${38 + Math.random() * 18}%,${40 + Math.random() * 18}%)`; g.lineWidth = 2.5; g.beginPath(); g.moveTo(x, 64); g.quadraticCurveTo(x + (Math.random() - .5) * 10, 40, x + (Math.random() - .5) * 22, 10 + Math.random() * 30); g.stroke(); } });
+  TEX.boards = ['100', '200', '300'].map(n => canvasTex(64, 96, (g) => { g.fillStyle = '#f4f4f4'; g.fillRect(0, 0, 64, 96); g.strokeStyle = '#111'; g.lineWidth = 4; g.strokeRect(2, 2, 60, 92); g.fillStyle = '#111'; g.font = '900 30px Arial, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(n, 32, 50); }));
   TEX.grassBlade.wrapS = TEX.grassBlade.wrapT = THREE.ClampToEdgeWrapping; TEX.grassBlade.minFilter = THREE.LinearFilter; TEX.grassBlade.generateMipmaps = false;
   return TEX;
 }
@@ -1094,6 +1096,14 @@ function carGeo() {
     ...[0, 1, 2, 3, 4].map(k => [B(.03, r * 1.2, .05), -wdt * .42, 0, 0, k * Math.PI / 5, 0, 0, '#9aa0a8']),
     [Cy(.07, .07, wdt * .9, 8), 0, 0, 0, 0, 0, Math.PI / 2, '#c9a227'],
   ]);
+  const acc2 = mergeParts([
+    [B(.62, .03, 1.2), 0, .95, -1.05], [B(.04, .1, 1.5), .64, .6, -.4], [B(.04, .1, 1.5), -.64, .6, -.4], [B(1.0, .03, .18), 0, 1.13, -2.56, -.4], [taper(.22, .03, .14, .02, .8), 0, .5, 2.2],
+  ]);
+  const extra = mergeParts([
+    [B(1.0, .04, .22), 0, .52, -2.52, .15], [B(1.8, .025, .16), 0, .29, 2.33, -.75],
+    ...[-.5, -.25, 0, .25, .5].map(x => [B(.02, .16, .5), x, .18, -2.45]),
+    [B(.5, .3, .02), .68, .38, .62], [B(.5, .3, .02), -.68, .38, .62],
+  ]);
   const rings = mergeParts([
     [new THREE.TorusGeometry(.265, .028, 6, 26), 1.09, .36, 1.75, 0, Math.PI / 2], [new THREE.TorusGeometry(.265, .028, 6, 26), -1.09, .36, 1.75, 0, Math.PI / 2],
     [new THREE.TorusGeometry(.285, .028, 6, 26), 1.12, .39, -1.65, 0, Math.PI / 2], [new THREE.TorusGeometry(.285, .028, 6, 26), -1.12, .39, -1.65, 0, Math.PI / 2],
@@ -1102,14 +1112,14 @@ function carGeo() {
   // UV des plaques (chaque quad reçoit toute la texture)
   const uv = []; for (let k = 0; k < 3; k++) uv.push(0, 1, 0, 0, 1, 1, 0, 0, 1, 0, 1, 1);
   plates.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
-  CAR_GEO = { paint, acc, carbon, wheelF: wheel(.36, .34), wheelR: wheel(.39, .44), rings, plates, helmet: new THREE.SphereGeometry(.16, 16, 12), visor: new THREE.SphereGeometry(.163, 16, 8, -1.1, 2.2, 1.2, .5), tcam: B(.2, .08, .14), rain: B(.12, .05, .04), shadow: new THREE.PlaneGeometry(2.2, 5.8) };
+  CAR_GEO = { paint, acc, acc2, extra, carbon, wheelF: wheel(.36, .34), wheelR: wheel(.39, .44), rings, plates, helmet: new THREE.SphereGeometry(.16, 16, 12), visor: new THREE.SphereGeometry(.163, 16, 8, -1.1, 2.2, 1.2, .5), tcam: B(.2, .08, .14), rain: B(.12, .05, .04), shadow: new THREE.PlaneGeometry(2.2, 5.8) };
   return CAR_GEO;
 }
 const MAT_CACHE = {};
 function mat(color, kind = 'std', o = {}) {
   const k = kind + color + JSON.stringify(o); if (MAT_CACHE[k]) return MAT_CACHE[k];
   const base = { color, ...o };
-  return MAT_CACHE[k] = kind === 'paint' ? new THREE.MeshStandardMaterial({ ...base, metalness: .1, roughness: .38, envMapIntensity: .55, side: THREE.DoubleSide })
+  return MAT_CACHE[k] = kind === 'paint' ? new THREE.MeshStandardMaterial({ ...base, metalness: .25, roughness: .3, envMapIntensity: 1, side: THREE.DoubleSide })
     : kind === 'carbon' ? new THREE.MeshStandardMaterial({ ...base, metalness: .2, roughness: .45, side: THREE.DoubleSide })
       : kind === 'basic' ? new THREE.MeshBasicMaterial(base)
         : kind === 'lambert' ? new THREE.MeshLambertMaterial(base)
@@ -1121,6 +1131,8 @@ function makeCarMesh(c, Q) {
   add(G.paint, mat(t.body, 'paint'));
   add(G.acc, mat(t.acc, 'paint'));
   add(G.carbon, mat('#16171a', 'carbon'));
+  add(G.acc2, mat(t.acc2, 'paint'));
+  add(G.extra, mat('#121316', 'carbon'));
   const wm = mat('#ffffff', 'std', { vertexColors: true, roughness: .7 });
   const wheels = [[.9, .36, 1.75, G.wheelF], [-.9, .36, 1.75, G.wheelF], [.87, .39, -1.65, G.wheelR], [-.87, .39, -1.65, G.wheelR]].map(([x, y, z, geo]) => {
     const pivot = new THREE.Group(); pivot.position.set(x, y, z); g.add(pivot);
@@ -1221,17 +1233,21 @@ class World {
     this.pal = night ? { top: '#06102a', hor: '#24345a', gnd: '#0a0d14', fog: '#1a2440', dark: 1 } : { top: '#2f6fc0', hor: '#cfe3f3', gnd: '#5c6b52', fog: '#c4d6e4', dark: 0 };
     this.palRain = night ? { top: '#0a0e18', hor: '#1d2433', fog: '#141a26' } : { top: '#5f6a76', hor: '#9aa4ae', fog: '#8d97a1' };
     s.fog = new THREE.Fog(this.pal.fog, 500, night ? 2200 : 3200);
-    this.hemi = new THREE.HemisphereLight(night ? 0x9fb3ff : 0xe4f0ff, night ? 0x1b2030 : 0x4a5a3a, night ? .45 : .4); s.add(this.hemi);
+    this.hemi = new THREE.HemisphereLight(night ? 0x9fb3ff : 0xe4f0ff, night ? 0x1b2030 : 0x4a5a3a, night ? .5 : .55); s.add(this.hemi);
     this.sun = new THREE.DirectionalLight(night ? 0xfff0dd : 0xfff6e8, night ? .9 : 2.2);
     const sd = this.sky.material.uniforms.sunDir.value; if (night) sd.set(.1, .9, .2).normalize();
     this.sunDir = sd.clone();
     this.sun.position.copy(sd).multiplyScalar(400); s.add(this.sun); s.add(this.sun.target);
-    if (Q >= 2) { this.sun.castShadow = true; const sc = this.sun.shadow.camera; sc.left = sc.bottom = -110; sc.right = sc.top = 110; sc.near = 10; sc.far = 1000; this.sun.shadow.mapSize.set(2048, 2048); this.sun.shadow.bias = -.0004; this.sun.shadow.normalBias = .02; }
+    R.setPixelRatio(Math.min(window.devicePixelRatio || 1, Q >= 3 ? 2 : 1.6)); R.setSize(window.innerWidth, window.innerHeight, false);
+    if (Q >= 2) { this.sun.castShadow = true; const sc = this.sun.shadow.camera; const ext = Q >= 3 ? 90 : 110; sc.left = sc.bottom = -ext; sc.right = sc.top = ext; sc.near = 10; sc.far = 1000; this.sun.shadow.mapSize.set(Q >= 3 ? 4096 : 2048, Q >= 3 ? 4096 : 2048); this.sun.shadow.bias = -.0004; this.sun.shadow.normalBias = .02; }
     this.envRain = -1; this.updateSky(0, 0, true);
     this.buildTrack(); this.buildScenery();
     this.cars = new Map();
     for (const c of race.cars) { const m = makeCarMesh(c, Q); this.cars.set(c, m); s.add(m.g); }
+    this.buildBoards();
     this.buildSpray();
+    this.linearize(s);
+    this.cRed = new THREE.Color(0xff2010).convertSRGBToLinear(); this.cOff = new THREE.Color(0x220000).convertSRGBToLinear(); this.cRain = new THREE.Color(0x330000).convertSRGBToLinear();
     this.cams = new Map();
     this.tv = { target: null, cam: -1, t: 0, force: 0 };
     this.v1 = new THREE.Vector3(); this.v2 = new THREE.Vector3(); this.time = 0;
@@ -1240,16 +1256,16 @@ class World {
     const t = clamp(Math.max(w, rain) * 1.3, 0, 1), u = this.sky.material.uniforms, P = this.pal, PR = this.palRain;
     u.top.value.set(P.top).lerp(new THREE.Color(PR.top), t); u.hor.value.set(P.hor).lerp(new THREE.Color(PR.hor), t); u.gnd.value.set(P.gnd);
     u.cloud.value = .35 + t * .65; u.dark.value = P.dark;
-    this.scene.fog.color.set(P.fog).lerp(new THREE.Color(PR.fog), t);
+    this.scene.fog.color.set(P.fog).lerp(new THREE.Color(PR.fog), t).convertSRGBToLinear();
     this.scene.fog.far = lerp(this.T.info.night ? 2200 : 3200, 650, t);
-    this.sun.intensity = (this.T.info.night ? .7 : 1.25) * (1 - t * .55);
+    this.sun.intensity = (this.T.info.night ? 1.1 : 2.8) * (1 - t * .55);
     // reflets d'environnement régénérés quand la météo change franchement
     if (this.Q >= 1 && (force || Math.abs(t - this.envRain) > .25)) {
       this.envRain = t;
       const R = getRenderer(), pm = new THREE.PMREMGenerator(R), es = new THREE.Scene();
       // ciel simplifié (dégradé + soleil) peint par sommet, pour les reflets
       const sg = new THREE.SphereGeometry(100, 48, 24), pa = sg.attributes.position, cols = [], C = new THREE.Color(), V = new THREE.Vector3();
-      const top = u.top.value, hor = u.hor.value, gnd = u.gnd.value, sun = this.sunDir;
+      const top = u.top.value.clone().convertSRGBToLinear(), hor = u.hor.value.clone().convertSRGBToLinear(), gnd = u.gnd.value.clone().convertSRGBToLinear(), sun = this.sunDir;
       for (let k = 0; k < pa.count; k++) {
         V.fromBufferAttribute(pa, k).normalize();
         if (V.y >= 0) C.copy(hor).lerp(top, Math.pow(V.y, .55)); else C.copy(hor).lerp(gnd, Math.pow(-V.y, .35));
@@ -1319,7 +1335,7 @@ class World {
     const wallH = info.street ? 1.1 : .9;
     for (const sd of [1, -1]) {
       const W = i => { const base = sd > 0 ? T.wallP[i] : T.wallN[i]; return sd === T.pitSide ? Math.max(base, pitWallOff(i)) : base; };
-      s.add(recv(new THREE.Mesh(strips(T, i => ({ wall: 1, a: sd * W(i), b: sd * W((i + 1) % T.N), y0: 0, y1: wallH, uLen: sd > 0 ? -96 : 96 }), true), adMat)));
+      s.add(recv(new THREE.Mesh(strips(T, i => ({ wall: 1, a: sd * W(i), b: sd * W((i + 1) % T.N), y0: 0, y1: wallH, uLen: -96 }), true), adMat)));
       s.add(new THREE.Mesh(strips(T, i => ({ a: sd * W(i), b: sd * (W(i) + .4), y0: wallH, color: info.street ? '#bfc3c8' : '#9aa3ab' })), conc));
       if (info.street || Q >= 1) s.add(new THREE.Mesh(strips(T, i => ({ wall: 1, a: sd * (W(i) + .2), b: sd * (W((i + 1) % T.N) + .2), y0: wallH, y1: wallH + (info.street ? 3 : 2.2), uLen: 2.5 }), true), fence));
     }
@@ -1450,7 +1466,7 @@ class World {
       s.add(new THREE.Mesh(hg, new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide })));
     }
     // arbres : deux essences (conifères et feuillus)
-    const n = info.street ? 160 : (Q ? 900 : 500);
+    const n = info.street ? 160 : (Q >= 3 ? 1400 : Q ? 900 : 500);
     const pine = mergeParts([[new THREE.CylinderGeometry(.25, .35, 3, 6), 0, 1.5, 0, '#5a3d24'], [new THREE.ConeGeometry(3, 6, 8), 0, 5, 0, '#2c5a2a'], [new THREE.ConeGeometry(2.3, 5, 8), 0, 7.8, 0, '#336b30'], [new THREE.ConeGeometry(1.5, 3.5, 8), 0, 10.2, 0, '#3b7a36']]);
     const leafy = mergeParts([[new THREE.CylinderGeometry(.3, .45, 4, 6), 0, 2, 0, '#5d4027'], [new THREE.IcosahedronGeometry(3.2, 1), 0, 6.2, 0, '#3f7d35'], [new THREE.IcosahedronGeometry(2.4, 1), 1.6, 7.2, .6, '#4a8c3c'], [new THREE.IcosahedronGeometry(2.2, 1), -1.4, 7, -.8, '#356f2e']]);
     for (const [geo, frac] of [[pine, .5], [leafy, .5]]) {
@@ -1469,7 +1485,7 @@ class World {
     }
     // touffes d'herbe en bord de piste
     if (Q >= 1 && !info.street) {
-      const cnt = Q >= 2 ? 5000 : 1800;
+      const cnt = Q >= 3 ? 9000 : Q >= 2 ? 5000 : 1800;
       const blade = mergeParts([[new THREE.PlaneGeometry(1.2, .7), 0, .35, 0], [new THREE.PlaneGeometry(1.2, .7), 0, .35, 0, 0, Math.PI / 2, 0]]);
       const uv = []; for (let k = 0; k < 2; k++) uv.push(0, 1, 0, 0, 1, 1, 0, 0, 1, 0, 1, 1);
       blade.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
@@ -1500,6 +1516,63 @@ class World {
       this.addStand(bi * T.ds, -Math.sign(T.k40[bi] || 1), 60 + Math.random() * 40);
     }
   }
+  // panneaux 300 / 200 / 100 m avant les gros freinages
+  buildBoards() {
+    const T = this.T, s = this.scene;
+    const mats = TEX.boards.map(m => new THREE.MeshBasicMaterial({ map: m, side: THREE.DoubleSide }));
+    const geo = new THREE.PlaneGeometry(1.1, 1.65), post = new THREE.CylinderGeometry(.05, .05, 1.2, 6), pm = mat('#9aa3ab');
+    let lastM = -999;
+    for (let m = 0; m < T.N; m++) {
+      const a = T.vp[mod(m - 1, T.N)], b = T.vp[m], c = T.vp[(m + 1) % T.N];
+      if (!(b <= a && b < c && b < 50)) continue;
+      let k = m, steps = 0; while (steps < 80 && T.vp[mod(k - 1, T.N)] > T.vp[k] + .05) { k = mod(k - 1, T.N); steps++; }
+      if (T.vp[k] - b < 22 || Math.abs(m - lastM) < 40) continue;
+      lastM = m;
+      const side = -Math.sign(T.k40[m] || 1);
+      [0, 20, 40].forEach((back, n) => {
+        const i = mod(k - back, T.N), W = (side > 0 ? T.wallP[i] : T.wallN[i]) - .6;
+        const p = trackPoint(T, i * T.ds, side * W, {});
+        const g = new THREE.Group(); g.position.set(p.x, p.y, p.z); g.rotation.y = p.h + Math.PI;
+        const bd = new THREE.Mesh(geo, mats[n]); bd.position.y = 2.0; g.add(bd);
+        const ps = new THREE.Mesh(post, pm); ps.position.y = .6; g.add(ps);
+        s.add(g);
+      });
+    }
+  }
+  // couleurs authored en sRGB → espace linéaire (rendu physiquement correct)
+  linearize(root) {
+    const f = x => x < .04045 ? x / 12.92 : Math.pow((x + .055) / 1.055, 2.4);
+    root.traverse(o => {
+      for (const m of o.material ? [].concat(o.material) : []) {
+        if (m.userData.lin || m.isShaderMaterial) continue; m.userData.lin = true;
+        if (m.color) m.color.convertSRGBToLinear(); if (m.emissive) m.emissive.convertSRGBToLinear();
+        for (const k of ['map', 'emissiveMap']) if (m[k]) { m[k].encoding = THREE.sRGBEncoding; m[k].needsUpdate = true; }
+        m.needsUpdate = true;
+      }
+      const g = o.geometry;
+      if (g && g.attributes && g.attributes.color && !g.userData.lin) { g.userData.lin = true; const a = g.attributes.color.array; for (let i = 0; i < a.length; i++) a[i] = f(a[i]); g.attributes.color.needsUpdate = true; }
+      if (o.isInstancedMesh && o.instanceColor && !o.userData.lin) { o.userData.lin = true; const a = o.instanceColor.array; for (let i = 0; i < a.length; i++) a[i] = f(a[i]); o.instanceColor.needsUpdate = true; }
+    });
+  }
+  // étincelles sous les voitures à haute vitesse (qualité haute)
+  updateSparks(dt, focus) {
+    const sk = this.sk; if (!sk) return;
+    if (focus) for (const [c] of this.cars) {
+      if (c.v < 72 || c.dnf || this.race.w > .3 || Math.random() > dt * 2.2) continue;
+      if (Math.abs(c.x - focus.x) > 250 || Math.abs(c.z - focus.z) > 250) continue;
+      for (let k = 0; k < 10; k++) {
+        const i = sk.k = (sk.k + 1) % sk.n, sh = Math.sin(c.h), ch = Math.cos(c.h);
+        sk.pos[i * 3] = c.x - sh * (1 + Math.random()); sk.pos[i * 3 + 1] = c.y + .08; sk.pos[i * 3 + 2] = c.z - ch * (1 + Math.random());
+        sk.vel[i * 3] = sh * c.v * .25 + (Math.random() - .5) * 6; sk.vel[i * 3 + 1] = Math.random() * 2.5; sk.vel[i * 3 + 2] = ch * c.v * .25 + (Math.random() - .5) * 6; sk.life[i] = .18 + Math.random() * .2;
+      }
+    }
+    for (let i = 0; i < sk.n; i++) {
+      if (sk.life[i] <= 0) continue;
+      sk.life[i] -= dt; if (sk.life[i] <= 0) { sk.pos[i * 3 + 1] = -9999; continue; }
+      for (let a = 0; a < 3; a++) sk.pos[i * 3 + a] += sk.vel[i * 3 + a] * dt; sk.vel[i * 3 + 1] -= 9 * dt;
+    }
+    this.sparks.geometry.attributes.position.needsUpdate = true;
+  }
   // gerbes d'eau derrière les voitures sous la pluie
   buildSpray() {
     if (this.Q < 1) return;
@@ -1509,6 +1582,13 @@ class World {
     const m = new THREE.PointsMaterial({ size: 1.6, map: TEX.soft, transparent: true, opacity: .32, depthWrite: false, color: 0xdfe6ee });
     this.spray = new THREE.Points(g, m); this.spray.frustumCulled = false; this.scene.add(this.spray);
     this.sp.pos.fill(-9999);
+    if (this.Q >= 2) {
+      const n2 = 600, g2 = new THREE.BufferGeometry();
+      this.sk = { n: n2, pos: new Float32Array(n2 * 3).fill(-9999), vel: new Float32Array(n2 * 3), life: new Float32Array(n2), k: 0 };
+      g2.setAttribute('position', new THREE.BufferAttribute(this.sk.pos, 3));
+      this.sparks = new THREE.Points(g2, new THREE.PointsMaterial({ size: .22, color: 0xffb347, map: TEX.soft, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false }));
+      this.sparks.frustumCulled = false; this.scene.add(this.sparks);
+    }
   }
   updateSpray(dt, focus) {
     const sp = this.sp; if (!sp) return;
@@ -1539,7 +1619,7 @@ class World {
     this.updateSky(w, rain);
     this.roadMat.roughness = lerp(.88, .22, clamp(w * 1.4, 0, 1));
     this.roadMat.color.setRGB(1 - w * .5, 1 - w * .5, 1 - w * .45);
-    this.roadMat.envMapIntensity = .35 + w * 1.4;
+    this.roadMat.envMapIntensity = .5 + w * 1.6;
   }
   sync(dt = 0) {
     const r = this.race, T = this.T;
@@ -1547,15 +1627,15 @@ class World {
     const blink = Math.floor(this.time * 4) % 2 === 0;
     for (const [c, m] of this.cars) {
       m.g.position.set(c.x, c.y, c.z); m.g.rotation.y = c.h;
-      if (m.comp !== c.comp) { m.comp = c.comp; m.ringMat.color.set(COMP[c.comp].c); }
+      if (m.comp !== c.comp) { m.comp = c.comp; m.ringMat.color.set(COMP[c.comp].c).convertSRGBToLinear(); }
       // roues qui tournent et braquent
       m.spin = (m.spin + c.v * dt / .37) % (Math.PI * 2);
       const st = c.manual ? -(c.steer || 0) * .35 : -Math.atan(3.6 * (T.k[c.ti] || 0)) * 1.2;
       m.wheels.forEach((wh, k) => { wh.w.rotation.x = m.spin; if (k < 2) wh.pivot.rotation.y = clamp(st, -.4, .4); });
-      m.rainL.material.color.setHex(r.w > .15 && blink ? 0xff2010 : 0x330000);
+      m.rainL.material.color.copy(r.w > .15 && blink ? this.cRed : this.cRain);
     }
     const lit = r.phase === 'grid' ? Math.max(0, r.lights) : 0;
-    this.lights.forEach((l, k) => l.material.color.set(k < lit ? 0xff2010 : 0x220000));
+    this.lights.forEach((l, k) => l.material.color.copy(k < lit ? this.cRed : this.cOff));
     this.setWeather(r.w, r.rain);
   }
   // ---- caméras ----
@@ -1616,6 +1696,10 @@ class World {
         fov = clamp(2 * Math.atan(11 / D) * 180 / Math.PI, 4, 55);
       }
     }
+    if ((spec.type === 'onboard' || spec.type === 'tcam') && c.v > 5) {
+      const k = Math.min(1, c.v / 90) * .0035 + (Math.abs(c.d) > this.T.hw - .2 ? .006 : 0), tt = this.time;
+      cam.rotateX(Math.sin(tt * 41) * k + Math.sin(tt * 67) * k * .6); cam.rotateZ(Math.sin(tt * 29) * k * .7);
+    }
     cam.fov = fov; cam.aspect = aspect; cam.updateProjectionMatrix();
     return c;
   }
@@ -1638,7 +1722,7 @@ class World {
       R.setScissor(r.left, H - r.bottom, r.width, r.height);
       R.render(this.scene, st.cam);
     }
-    this.updateSpray(dt, focus);
+    this.updateSpray(dt, focus); this.updateSparks(dt, focus);
   }
   dispose() {
     this.scene.traverse(o => {
@@ -1718,20 +1802,44 @@ const Sfx = {
 const Speech = {
   ok: 'speechSynthesis' in window,
   voices() { return this.ok ? speechSynthesis.getVoices().filter(v => /^fr/i.test(v.lang)) : []; },
+  rank(v) {
+    const n = (v.name + ' ' + (v.voiceURI || '')).toLowerCase(); let s = 0;
+    if (/premium|enhanced|am[ée]lior|neural|natural|naturel|siri|wavenet|studio/.test(n)) s += 20;
+    if (/google/.test(n)) s += 8;
+    if (/microsoft.*online/.test(n)) s += 12;
+    if (/compact|espeak|eloquence|grandma|grandpa|rocko|shelley|sandy|flo|reed|eddy/.test(n)) s -= 15;
+    if (/fr[-_]fr/i.test(v.lang)) s += 3;
+    return s;
+  },
+  sorted() { return this.voices().slice().sort((a, b) => this.rank(b) - this.rank(a)); },
+  pickVoice(role, seed) {
+    const vs = this.sorted(); if (!vs.length) return null;
+    const pref = role === 'eng' ? Game.prefs.voiceEng : Game.prefs.voiceDrv;
+    const chosen = pref && vs.find(v => v.name === pref); if (chosen) return chosen;
+    if (role === 'eng') return vs[0];
+    const good = vs.filter(v => this.rank(v) >= this.rank(vs[0]) - 5);
+    return good.length > 1 ? good[1 + (seed % (good.length - 1))] : vs[Math.min(1, vs.length - 1)];
+  },
+  // texte plus naturel à l'oral
+  clean(t) {
+    return t.replace(/km\/h/g, ' kilomètres-heure').replace(/(\d) ?%/g, '$1 pour cent').replace(/\bP(\d+)/g, 'P $1').replace(/(\d+):(\d\d)\.(\d)\d*/g, '$1 minute $2 secondes $3').replace(/\bDRS\b/g, 'D R S').replace(/…/g, ', ').replace(/ !/g, '!');
+  },
   prime() { if (!this.ok) return; try { const u = new SpeechSynthesisUtterance(' '); u.volume = 0; speechSynthesis.speak(u); } catch (e) { } },
   say(text, role, seed, onEnd) {
     if (!this.ok) { onEnd && setTimeout(onEnd, 400 + text.length * 55); return; }
-    const u = new SpeechSynthesisUtterance(text);
-    const vs = this.voices(); u.lang = 'fr-FR';
+    const u = new SpeechSynthesisUtterance(this.clean(text));
     const h = [...(seed || 'x')].reduce((a, ch) => a + ch.charCodeAt(0), 0);
-    if (vs.length) u.voice = role === 'eng' ? vs[0] : vs[(1 + h) % vs.length] || vs[0];
-    u.rate = role === 'eng' ? 1.06 : 1.12;
-    u.pitch = role === 'eng' ? .92 : .9 + (h % 7) * .05;
+    u.lang = 'fr-FR';
+    const v = this.pickVoice(role === 'eng' ? 'eng' : 'drv', h); if (v) { u.voice = v; u.lang = v.lang; }
+    // une voix de qualité sonne mieux sans déformation : on garde la hauteur naturelle
+    u.rate = role === 'eng' ? 1.0 : 1.07;
+    u.pitch = role === 'eng' ? 1 : 1 + ((h % 5) - 2) * .03;
     let done = false; const fin = () => { if (!done) { done = true; onEnd && onEnd(); } };
     u.onend = fin; u.onerror = fin;
-    setTimeout(fin, 2500 + text.length * 110); // filet de sécurité
+    setTimeout(fin, 3000 + text.length * 120);
     speechSynthesis.speak(u);
   },
+  test(role) { this.stop(); this.say(role === 'eng' ? 'Box box, box box. On passe en pneus durs, écart de deux secondes sur Leclerc.' : 'Compris, je pousse ! Les pneus arrière commencent à glisser.', role, 'TST'); },
   stop() { if (this.ok) speechSynthesis.cancel(); },
 };
 
@@ -1760,19 +1868,20 @@ const Mic = {
   },
   stop() { if (this.rec) { try { this.rec.stop(); } catch (e) { } Sfx.beep(true); } },
 };
-// Bouton « appuyer pour parler » : maintenir = parler ; appui court = bascule marche/arrêt
+// Bouton radio : on MAINTIENT appuyé pour parler, on relâche pour envoyer
 function bindPTT(btn, getHandlers) {
-  let downAt = 0, startedHere = false;
+  let active = false;
   const setLive = on => btn.classList.toggle('live', on);
   btn.addEventListener('pointerdown', e => {
     e.preventDefault(); Sfx.init();
-    if (Mic.on) { Mic.stop(); startedHere = false; return; }
+    if (Mic.on) return;
+    try { if (e.pointerId !== undefined) btn.setPointerCapture(e.pointerId); } catch (_) { }
     const h = getHandlers(); const end0 = h.end;
-    h.end = () => { setLive(false); end0 && end0(); };
-    if (Mic.start(h)) { setLive(true); downAt = performance.now(); startedHere = true; }
+    h.end = () => { active = false; setLive(false); end0 && end0(); };
+    if (Mic.start(h)) { setLive(true); active = true; }
   });
-  const up = () => { if (startedHere && Mic.on && performance.now() - downAt > 450) Mic.stop(); startedHere = false; };
-  btn.addEventListener('pointerup', up); btn.addEventListener('pointercancel', up);
+  const stop = () => { if (!active) return; active = false; setTimeout(() => Mic.stop(), 300); };
+  btn.addEventListener('pointerup', stop); btn.addEventListener('pointercancel', stop); btn.addEventListener('lostpointercapture', stop);
   btn.addEventListener('contextmenu', e => e.preventDefault());
 }
 
@@ -2023,7 +2132,7 @@ const Brain = {
   humanOrder(text, car) {
     const t = norm(text), comp = parseComp(t);
     if (RX.cancel.test(t)) { car.pitReq = false; car.pitComp = null; return; }
-    if (RX.box.test(t) && !car.pit) { car.pitReq = true; car.pitComp = comp || car.pitComp || this.race.autoComp(car); return; }
+    if (RX.box.test(t) && !/\b(quand|est ce que|tu veux|tu crois|tu penses|dois|faut|on devrait)\b|\?/.test(t) && !car.pit) { car.pitReq = true; car.pitComp = comp || car.pitComp || this.race.autoComp(car); return; }
     if (comp) car.pitComp = comp;
   },
   ruleManager(text, car) {
@@ -2034,7 +2143,7 @@ const Brain = {
     const mate = r.cars.find(x => x.team === car.team && x !== car);
     const comp = parseComp(t);
     if (RX.cancel.test(t)) { const had = car.pitReq; car.pitReq = false; car.pitComp = null; return reply(had ? 'Compris, je reste en piste.' : 'Ok, je reste dehors.'); }
-    if (RX.box.test(t)) {
+    if (RX.box.test(t) && !/\b(quand|est ce que|tu veux|tu crois|tu penses|dois|faut|on devrait)\b|\?/.test(t)) {
       if (car.pit) return reply('Je suis déjà dans les stands !');
       car.pitReq = true; car.pitComp = comp || car.pitComp || r.autoComp(car);
       const dryT = r.w < .2, wetC = isWetTyre(car.pitComp);
@@ -2053,12 +2162,8 @@ const Brain = {
     if (RX.defend.test(t)) { car.mode = 'defend'; car.paceT = 0; return reply(pick(['Compris, je ferme la porte.', 'Ok, je défends. Il ne passera pas.'])); }
     if (RX.push.test(t)) { car.mode = 'push'; car.paceT = 0; return reply(pick(['C\'est parti, je pousse !', 'Ok, mode attaque. On y va !', 'Compris, je donne tout.', 'Enfin ! Je pousse.'])); }
     if (RX.normal.test(t)) { car.mode = 'normal'; car.paceT = 0; return reply('Compris, rythme normal.'); }
-    if (RX.tyres.test(t)) return reply(this.tyreFeel(car));
-    if (RX.weather.test(t)) return reply(r.w > .5 ? 'Ça tombe fort, la visibilité est mauvaise.' : r.w > .15 ? 'Quelques gouttes, la piste est piégeuse par endroits.' : r.rain > 0 ? 'Je sens quelques gouttes sur la visière.' : 'Sec pour l\'instant, ciel correct.');
-    if (RX.gap.test(t)) { const g = this.gaps(car); return reply(g.a && g.ga != null && g.ga < 1.2 ? `Je suis juste derrière ${g.a.drv.last}, je cherche l'ouverture.` : 'Reçu, je pousse pour réduire l\'écart.'); }
-    if (RX.car.test(t)) return reply(pick(['La voiture est bien, je suis content.', 'Un peu de sous-virage dans les virages lents.', 'L\'arrière est nerveux à la réaccélération.', 'Les freins sont un peu chauds mais ça va.']));
-    if (RX.praise.test(t)) return reply(pick(['Merci ! Super boulot de l\'équipe !', 'Yes ! On continue comme ça.', 'Merci, la voiture est géniale aujourd\'hui.']));
-    if (RX.thanks.test(t)) return reply(pick(['Reçu.', 'Copy.', 'Compris.']), 1);
+    const ans = Talk.driver(car, t);
+    if (ans) return reply(ans);
     if (t.trim().length < 3) return;
     reply(pick(['Reçu.', 'Compris.', 'Copy, compris.', 'Bien reçu.', 'Je n\'ai pas bien compris, tu peux répéter ?']));
   },
@@ -2076,7 +2181,8 @@ const Brain = {
     const comp = parseComp(t);
     if (c.fin) return reply(pick(['Merci à toi, superbe travail aujourd\'hui.', 'Bien joué, rentre tranquillement aux stands.']));
     if (RX.cancel.test(t)) { c.pitReq = false; c.pitComp = null; return reply('Compris, on reste dehors. Pas de box.'); }
-    if (RX.strat.test(t) || (/quand/.test(t) && RX.box.test(t))) {
+    if (RX.strat.test(t) || (/\b(quand|dois|faut|est ce que|tu crois|on devrait|c est le moment)\b|\?/.test(t) && RX.box.test(t))) {
+      return reply(Talk.pitWindow(c));
       const n = this.lapsToBox(c), left = r.laps - c.lapsDone;
       if (idealFor(r.w) && !isWetTyre(c.comp)) return reply('Il faut rentrer dès que possible pour des ' + PL[idealFor(r.w)] + '.');
       if (n >= left) return reply(`On peut aller jusqu'au bout sur ces ${PL[c.comp]}${r.twoComp && new Set([...c.used].filter(x => !isWetTyre(x))).size < 2 ? ', mais il faudra quand même faire l\'arrêt obligatoire' : ''}.`);
@@ -2088,30 +2194,8 @@ const Brain = {
       return reply(`Compris, box box ce tour. On met des ${PL[c.pitComp]}.`);
     }
     if (comp) { c.pitComp = comp; return reply(`Noté, ${PL[comp]} au prochain arrêt.`); }
-    if (RX.gap.test(t)) {
-      const g = this.gaps(c); let s = '';
-      s += g.a && g.ga != null ? `Écart devant : ${frNum(g.ga)} seconde${g.ga >= 2 ? 's' : ''} sur ${g.a.drv.last}. ` : 'Tu es en tête ! ';
-      s += g.b && g.gb != null ? `Derrière, ${g.b.drv.last} à ${frNum(g.gb)}.` : 'Personne derrière.';
-      return reply(s);
-    }
-    if (RX.pos.test(t)) return reply(`Tu es P${c.pos}.` + (c.pos <= 3 ? ' Sur le podium, continue !' : c.pos <= 10 ? ' Dans les points.' : ' Il faut remonter, on y croit.'));
-    if (RX.laps.test(t)) { const left = r.laps - c.lapsDone; return reply(left <= 1 ? 'C\'est le dernier tour !' : `Il reste ${left} tours.`); }
-    if (RX.weather.test(t)) {
-      const segs = r.weather.segs, lp = c.dist / r.T.L, nxt = segs.find(s => s.from > lp);
-      if (r.rain > 0) return reply(r.w > .5 ? 'Grosse pluie, sois prudent. Les intermédiaires sont la bonne option.' : 'De la pluie légère, la piste commence à être piégeuse.');
-      if (nxt) { const k = Math.max(1, Math.round(nxt.from - lp)); return reply(`Le radar annonce de la pluie dans environ ${k} tour${k > 1 ? 's' : ''}.`); }
-      return reply('Pas de pluie attendue, le ciel reste dégagé.');
-    }
-    if (RX.tyres.test(t)) return reply(`Usure ${Math.round(c.wear)} %, ${c.age} tour${c.age > 1 ? 's' : ''} sur ces ${PL[c.comp]}. ` + (c.wear > 65 ? 'Ils sont à la limite.' : 'Ça tient.'));
-    if (RX.pace.test(t)) return reply(c.lastLap ? `Dernier tour en ${frNum(c.lastLap, 1)} secondes. ${c.bestLap === c.lastLap ? 'C\'est ton meilleur !' : 'Ton meilleur : ' + frNum(c.bestLap, 1) + '.'}` : 'On attend ton premier tour complet.');
-    if (RX.problem.test(t)) return reply(pick(['Compris, on regarde la télémétrie… tout est normal de notre côté.', 'Reçu. Essaie de décaler ton point de freinage.', 'On voit ça. Adapte le frein moteur si besoin.']));
-    if (RX.complain.test(t)) return reply(pick(['Noté, on le signale à la direction de course.', 'Reçu, c\'est sous enquête.', 'Compris, on en parle aux commissaires.']));
-    if (RX.joy.test(t) || RX.praise.test(t)) return reply(pick(['Superbe ! Continue comme ça !', 'Magnifique ! Garde la tête froide.', 'Yes ! Allez, allez !']));
-    if (RX.push.test(t)) return reply('Ok, mode attaque. La batterie est à toi.');
-    if (RX.save.test(t)) return reply('Bien vu, gère les pneus dans les virages rapides.');
-    if (RX.thanks.test(t)) return;
-    if (t.trim().length < 3) return;
-    reply(pick(['Reçu. Concentre-toi sur la course.', 'Compris.', 'Copy. On regarde ça.']));
+    const ans = Talk.engineer(c, t);
+    if (ans) reply(ans);
   },
   // ---------- MESSAGES SPONTANÉS ----------
   handle(ev) {
@@ -2214,6 +2298,180 @@ const Brain = {
 };
 
 /* =====================================================================
+   CONVERSATION RADIO — compréhension élargie et réponses chiffrées
+   Talk.engineer(c, t) : l'ingénieur répond au pilote
+   Talk.driver(c, t)   : le pilote répond à l'ingénieur
+   (t = texte normalisé : minuscules, sans accents)
+   ===================================================================== */
+const CORNERS = ['avant gauche', 'avant droit', 'arrière gauche', 'arrière droit'];
+const WEARF = [1.04, 1.1, .96, 1.0];
+const Talk = {
+  last: { eng: '', drv: '' },
+  // corrige quelques erreurs fréquentes de la dictée vocale
+  fix(t) {
+    return ' ' + t.replace(/\b(boxe|bocs|boks|bock|books|backs)\b/g, 'box').replace(/\bpneu\b/g, 'pneus').replace(/\bet car\b/g, 'ecart').replace(/\bmedium\b/g, 'mediums')
+      .replace(/\bstand\b/g, 'stands').replace(/\bp ?(\d+)\b/g, 'p$1').replace(/[?!.,;:\-]/g, ' ').replace(/\s+/g, ' ') + ' ';
+  },
+  r: a => a[Math.floor(Math.random() * a.length)],
+  f1: x => frNum(Math.max(0, x), 1),
+  s(x) { return x >= 2 ? 's' : ''; },
+  carNamed(t, self) {
+    const r = Brain.race, flat = t.replace(/\s/g, '');
+    let best = null;
+    for (const c of r.cars) {
+      if (c === self) continue;
+      const ln = norm(c.drv.last).replace(/\s/g, ''), fn = norm(c.drv.first).replace(/\s/g, '');
+      if (flat.includes(ln) || (fn.length > 3 && new RegExp('\\b' + fn + '\\b').test(t)) || new RegExp('\\b' + c.code.toLowerCase() + '\\b').test(t)) best = c;
+    }
+    if (!best) for (const tm of TEAMS) if (t.includes(norm(tm.name))) { const cs = r.cars.filter(c => c.team === tm && c !== self); if (cs.length) best = cs.sort((a, b) => a.pos - b.pos)[0]; }
+    return best;
+  },
+  gapTo(c, o) {
+    const L = Brain.race.T.L;
+    const laps = Math.trunc((o.dist - c.dist) / L);
+    if (Math.abs(laps) >= 1) return { lapped: laps, txt: Math.abs(laps) + ' tour' + (Math.abs(laps) > 1 ? 's' : '') };
+    return { s: o.gap - c.gap, txt: this.f1(Math.abs(o.gap - c.gap)) + ' seconde' + this.s(Math.abs(o.gap - c.gap)) };
+  },
+  worstCorner(c) { let k = 0; for (let q = 1; q < 4; q++) if (c.temps[q] > c.temps[k]) k = q; return k; },
+  mostWorn(c) { let k = 0; for (let q = 1; q < 4; q++) if (WEARF[q] > WEARF[k]) k = q; return k; },
+  tyreState(w) { return w < 20 ? 'comme neufs' : w < 40 ? 'en bon état' : w < 60 ? 'en train de se dégrader' : w < 75 ? 'bien usés' : 'en fin de vie'; },
+  forecast() {
+    const r = Brain.race, lp = Math.max(0, r.order[0].dist / r.T.L), seg = r.weather.segs.find(s => s.to > lp);
+    if (r.rain > 0) { const end = seg ? Math.max(1, Math.round(seg.to - lp)) : null; return `Il pleut${r.w > .6 ? ' fort' : ''}, piste mouillée à ${Math.round(r.w * 100)} %.${end ? ` L'averse devrait durer encore ${end} tour${end > 1 ? 's' : ''}.` : ''}`; }
+    if (seg && seg.from > lp) { const k = Math.max(1, Math.round(seg.from - lp)); return `Pas de pluie pour l'instant, mais le radar annonce une averse dans environ ${k} tour${k > 1 ? 's' : ''}${seg.r > .7 ? ', et elle s\'annonce forte' : ''}.`; }
+    if (r.w > .05) return `Il ne pleut plus, la piste sèche : encore ${Math.round(r.w * 100)} % d'humidité.`;
+    return this.r(['Temps sec, aucune pluie annoncée.', 'Rien au radar, ciel dégagé jusqu\'à la fin.', 'Piste sèche, pas de pluie prévue.']);
+  },
+  standings() {
+    const s = Game.save; if (!s || Game.wk.quick) return null;
+    const st = standings(s), me = Brain.race.cars.find(c => c.isPlayer) || Brain.race.cars.find(c => c.team === Brain.race.myTeam);
+    const i = st.d.findIndex(x => x.d === me.drv), lead = st.d[0];
+    return i === 0 ? `Tu es en tête du championnat avec ${lead.p} points.` : `Au championnat, tu es P${i + 1} avec ${st.d[i].p} points. ${lead.d.last} mène avec ${lead.p}.`;
+  },
+  pitWindow(c) {
+    const r = Brain.race, left = r.laps - c.lapsDone, n = Brain.lapsToBox(c), ideal = idealFor(r.w);
+    if (c.pitReq) return `On t'attend aux stands ce tour pour des ${PL[c.pitComp || r.autoComp(c)]}.`;
+    if (ideal && !isWetTyre(c.comp)) return `Il faut rentrer dès que possible pour des ${PL[ideal]}.`;
+    if (!ideal && isWetTyre(c.comp) && r.w < .15) return `La piste sèche : on repasse en slicks bientôt, sans doute des ${PL[r.autoComp(c)]}.`;
+    const mand = r.twoComp && new Set([...c.used].filter(x => !isWetTyre(x))).size < 2 && [...c.used].every(x => !isWetTyre(x));
+    if (n >= left) return `Ces ${PL[c.comp]} peuvent aller jusqu'au bout${mand ? ', mais il reste l\'arrêt obligatoire à faire : on le placera en fin de course' : ''}.`;
+    if (n <= 0) return `C'est le moment de rentrer : box ce tour ou au prochain, pour des ${PL[c.pitComp || r.autoComp(c)]}.`;
+    return `Fenêtre d'arrêt dans ${n} tour${n > 1 ? 's' : ''}. Plan : des ${PL[c.pitComp || r.autoComp(c)]}${left - n > 0 ? ` pour les ${left - n} derniers tours` : ''}.`;
+  },
+  pace(c, o) {
+    if (!o) { if (!c.lastLap) return 'On attend ton premier tour complet.'; return `Dernier tour en ${fmtLap(c.lastLap)}${isFinite(c.bestLap) && c.bestLap < c.lastLap - .05 ? `, ton meilleur est en ${fmtLap(c.bestLap)}` : ', c\'est ton meilleur'}. ${Brain.race.fastest.c ? `Le meilleur tour de la course : ${Brain.race.fastest.c === c ? 'c\'est toi' : Brain.race.fastest.c.drv.last + ' en ' + fmtLap(Brain.race.fastest.t)}.` : ''}`; }
+    if (!c.lastLap || !o.lastLap) return `Pas encore de comparaison de rythme avec ${o.drv.last}.`;
+    const d = o.lastLap - c.lastLap;
+    return `${o.drv.last} a fait ${fmtLap(o.lastLap)} au dernier tour, ${Math.abs(d) < .05 ? 'le même rythme que toi' : d > 0 ? `tu es plus rapide de ${frNum(d, 1)}` : `il est plus rapide de ${frNum(-d, 1)}`}.`;
+  },
+  about(c, o) {
+    const g = this.gapTo(c, o), ahead = o.pos < c.pos;
+    let s = `${o.drv.name} est P${o.pos}`;
+    if (o.dnf) return `${o.drv.name} a abandonné.`;
+    s += g.lapped ? `, ${g.lapped > 0 ? 'avec ' + g.txt + ' d\'avance' : g.txt + ' derrière'}` : `, ${g.txt} ${ahead ? 'devant toi' : 'derrière toi'}`;
+    s += `. Il est en ${PL[o.comp]} de ${o.age} tour${o.age > 1 ? 's' : ''}, ${o.stops} arrêt${o.stops > 1 ? 's' : ''}.`;
+    if (o.pit) s += ' Il est dans les stands en ce moment.';
+    else if (o.pitReq) s += ' On pense qu\'il va s\'arrêter.';
+    if (c.lastLap && o.lastLap) { const d = o.lastLap - c.lastLap; s += Math.abs(d) < .1 ? ' Même rythme que toi.' : d > 0 ? ` Tu lui prends ${frNum(d, 1)} au tour.` : ` Il est plus rapide de ${frNum(-d, 1)} au tour.`; }
+    return s;
+  },
+
+  /* ------------ L'INGÉNIEUR RÉPOND AU PILOTE ------------ */
+  engineer(c, t0) {
+    const r = Brain.race, t = this.fix(t0), g = Brain.gaps(c), left = r.laps - c.lapsDone, out = [];
+    const has = re => re.test(t);
+    const mate = r.cars.find(x => x.team === c.team && x !== c);
+    const other = this.carNamed(t, c);
+    if (has(/\b(repete|repeter|pas compris|j ai pas entendu|redis)\b/) && this.last.eng) return 'Je répète : ' + this.last.eng;
+    if (other && !has(/\b(laisse|passer)\b/)) out.push(this.about(c, other));
+    if (has(/\b(pneus|gomme|gommes|usure|grip|adherence|degradation|grain|graining|blister|temperature des pneus|pressions?)\b/) && !(other && has(/\b(il|lui|ses|son)\b/)) && !has(/\b(devant|derriere|celui|les autres|il a|ils ont)\b/)) {
+      const w = Math.round(c.wear), k = this.mostWorn(c), h = this.worstCorner(c);
+      out.push(`Tes ${PL[c.comp]} ont ${c.age} tour${c.age > 1 ? 's' : ''} et ${w} % d'usure, ils sont ${this.tyreState(w)}. Le plus usé : l'${CORNERS[k]} à ${Math.round(Math.min(100, c.wear * WEARF[k]))} %. Le plus chaud : l'${CORNERS[h]} à ${Math.round(c.temps[h])} degrés.` + (c.temps[h] > 112 ? ' Il surchauffe, ménage-le dans les virages lents.' : c.temps[h] < 75 ? ' Ils sont froids, chauffe-les.' : ''));
+      if (!has(/\b(box|fenetre|strat)/)) out.push(this.pitWindow(c));
+    }
+    if (has(/\b(pneus|gomme|gommes|sur quoi|chausse)\b/) && has(/\b(devant|derriere|autres|celui|tete|leader)\b/)) {
+      const list = [g.a, g.b].filter(Boolean).map(o => `${o.drv.last} en ${PL[o.comp]} de ${o.age} tours`);
+      if (list.length) out.push(list.join(', ') + '.');
+    }
+    if (has(/\b(ecart|gap|intervalle|devant|derriere|distance|loin|combien.*(seconde|retard|avance))\b/) && !other) {
+      let s = g.a && g.ga != null ? `${g.a.drv.last} est devant à ${this.f1(g.ga)} seconde${this.s(g.ga)}` : 'Tu es en tête de la course';
+      s += g.b && g.gb != null ? `, ${g.b.drv.last} derrière à ${this.f1(g.gb)}.` : ', personne derrière.';
+      if (g.a && g.ga != null && c.lastLap && g.a.lastLap) { const d = g.a.lastLap - c.lastLap; if (d > .05 && g.ga > .5) s += ` Tu reprends ${frNum(d, 1)} par tour, tu seras sur lui dans ${Math.ceil(g.ga / d)} tours.`; }
+      if (g.b && g.gb != null && g.gb < 1) s += ` Il est à moins d'une seconde, attention dans les zones de freinage.`;
+      out.push(s);
+    }
+    if (has(/\b(position|place|classement|quel rang|je suis ou|je suis combien|ma position)\b/)) out.push(`Tu es P${c.pos} sur ${r.cars.filter(x => !x.dnf).length}.` + (c.pos === 1 ? ' En tête !' : c.pos <= 3 ? ' Sur le podium.' : c.pos <= 10 ? ' Dans les points.' : ` Le dixième est ${r.order[9] ? r.order[9].drv.last : ''}, il faut remonter.`));
+    if (has(/\b(tours?|reste|restant|fin de course|combien de temps|c est bientot fini)\b/) && !has(/\b(dernier tour|meilleur tour|chrono|temps au tour)\b/)) out.push(left <= 1 ? 'C\'est le dernier tour, donne tout !' : `Il reste ${left} tours sur ${r.laps}.`);
+    if (has(/\b(strategie|strat|plan|fenetre|quand.*(rentre|arret|box)|prochain arret|un ou deux arrets|combien d arrets|(dois|faut|devrait).*(rentrer|rentre|box|arreter|stands))\b/)) out.push(this.pitWindow(c));
+    if (has(/\b(meteo|pluie|pleut|pleuvoir|mouille|mouillee|averse|nuage|ciel|orage|seche)\b/)) out.push(this.forecast());
+    if (has(/\b(chrono|temps au tour|dernier tour|meilleur tour|rythme|lap|tour rapide|je suis rapide|je suis lent)\b/)) out.push(this.pace(c, other && has(/\b(lui|il|son|compar)/) ? other : null));
+    if (has(/\b(essence|carburant|fuel|consommation)\b/)) out.push(`Il te reste ${frNum(c.fuel, 1)} kilos d'essence, c'est suffisant jusqu'à l'arrivée${c.fuel < r.fuelLap * left * .97 ? ', mais lève un peu le pied en fin de ligne droite' : ''}.`);
+    if (has(/\b(batterie|ers|energie|deploiement|recharge|hybride|mode depassement|overtake)\b/)) out.push(`Batterie à ${Math.round(c.bat)} %. ${c.bat < 30 ? 'Recharge au freinage pendant un tour avant d\'attaquer.' : 'Tu peux l\'utiliser dans la ligne droite principale pour attaquer.'}`);
+    if (has(/\b(coequipier|equipier|mon partenaire)\b/) && mate) out.push(this.about(c, mate));
+    if (has(/\b(qui (est|mene)|en tete|leader|qui gagne|premier)\b/) && !has(/\bje suis\b/)) { const l = r.order[0]; out.push(l === c ? 'C\'est toi qui mènes !' : `${l.drv.name} mène la course, à ${this.f1(c.gap)} seconde${this.s(c.gap)} de toi.`); }
+    if (has(/\b(qui s est arrete|arrets? des autres|qui a change|qui est rentre|qui a pitte)\b/)) { const p = r.order.filter(x => x.stops > 0 && x !== c).slice(0, 4); out.push(p.length ? `Déjà arrêtés : ${p.map(x => x.drv.last + ' (' + PL[x.comp] + ')').join(', ')}.` : 'Personne ne s\'est encore arrêté.'); }
+    if (has(/\b(abandon|accident|crash|incident|il s est passe quoi|drapeau)\b/)) { const d = r.cars.filter(x => x.dnf); out.push(d.length ? `Abandon${d.length > 1 ? 's' : ''} : ${d.map(x => x.drv.last).join(', ')}. La course continue sous drapeau vert.` : 'Aucun incident, drapeau vert partout.'); }
+    if (has(/\b(championnat|points|classement general)\b/)) { const s = this.standings(); out.push(s || (c.pos <= 10 ? `Si ça finit comme ça, tu prends ${POINTS[c.pos - 1]} points.` : 'Pour l\'instant, pas de points.')); }
+    if (has(/\b(freins?|moteur|boite|vitesses?|direction|aileron|degats|abime|casse|vibration|vibre|probleme|bizarre|survir\w*|sous ?vir\w*|equilibre|balance|glisse)\b/)) {
+      const hot = Math.max(...c.temps);
+      out.push(this.r([`On regarde la télémétrie… ${hot > 110 ? 'les températures des pneus sont hautes, ça peut venir de là' : 'tout est normal de notre côté'}. ${has(/sous ?vir/) ? 'Pour le sous-virage, freine un peu plus tôt et tourne plus progressivement.' : has(/survir/) ? 'Pour le survirage, sois plus doux sur l\'accélérateur en sortie.' : has(/freins?/) ? 'Les freins sont dans la bonne fenêtre, décale ton point de freinage de cinq mètres.' : 'Continue, on surveille.'}`]));
+    }
+    if (has(/\b(penalite|enquete|commissaire|limites? de piste|il m a pousse|il m a touche|il m a sorti|dangereux|il bloque|drapeaux? bleus?)\b/)) out.push(this.r(['Reçu, on le signale à la direction de course.', 'Compris, l\'incident est noté, les commissaires regardent.', 'On transmet à la direction de course. Reste concentré sur ta course.']));
+    if (has(/\b(je pousse|on pousse|j attaque|je peux attaquer|a fond|je donne tout)\b/) && !has(/\bm a pousse\b/)) out.push(c.wear > 65 ? 'Tu peux attaquer, mais les pneus sont fatigués : ne va pas trop loin.' : g.a && g.ga != null && g.ga < 1.5 ? `Oui, attaque ${g.a.drv.last}, la batterie est à ${Math.round(c.bat)} %.` : 'Ok, mode attaque, on veut des tours rapides.');
+    if (has(/\b(je gere|economise|je leve|doucement|je menage)\b/)) out.push(`Bien vu, gère les pneus. Tu as ${g.b && g.gb != null ? this.f1(g.gb) + ' seconde' + this.s(g.gb) + ' de marge sur ' + g.b.drv.last : 'de la marge derrière'}.`);
+    if (has(/\b(que (dois|faut)|je fais quoi|conseil|des infos|resume|point complet|comment ca se passe|situation)\b/)) {
+      out.push(`P${c.pos}, ${left} tours à faire. ${g.a && g.ga != null ? 'Devant : ' + g.a.drv.last + ' à ' + this.f1(g.ga) + '. ' : ''}${g.b && g.gb != null ? 'Derrière : ' + g.b.drv.last + ' à ' + this.f1(g.gb) + '. ' : ''}${this.pitWindow(c)}`);
+    }
+    if (has(/\b(salut|bonjour|bonsoir|coucou|hello)\b/)) out.push(this.r(['Salut ! On est là, je t\'écoute.', 'Bien reçu, la radio est bonne.']));
+    if (has(/\b(ca va|tu vas bien|comment tu vas)\b/) && !out.length) out.push(this.r(['Ça va très bien ici, tout le garage est derrière toi !', 'Tout va bien au mur des stands. Concentre-toi, tu fais du bon travail.']));
+    if (has(/\b(yes|youpi|trop bien|genial|incroyable|victoire|on l a fait|allez)\b/) && !out.length) out.push(this.r(['Superbe ! Continue comme ça !', 'Magnifique, garde la tête froide.', 'Yes ! Allez, allez !']));
+    if (has(/\b(merci|ok|okay|compris|recu|bien recu|copy|d accord|parfait)\b/) && !out.length) return null;
+    if (!out.length) out.push(this.r([`Je n'ai pas tout compris. Pour info : P${c.pos}, ${left} tours restants, ${g.a && g.ga != null ? 'écart devant ' + this.f1(g.ga) + ' seconde' + this.s(g.ga) : 'tu es en tête'}, pneus à ${Math.round(c.wear)} %.`, `Reçu. Tu es P${c.pos}, ${Math.round(c.wear)} % d'usure sur les ${PL[c.comp]}. Tu peux me demander les écarts, les pneus, la météo ou la stratégie.`]));
+    const txt = [...new Set(out)].slice(0, 3).join(' ');
+    this.last.eng = txt;
+    return txt;
+  },
+
+  /* ------------ LE PILOTE RÉPOND À L'INGÉNIEUR ------------ */
+  driver(c, t0) {
+    const r = Brain.race, t = this.fix(t0), g = Brain.gaps(c), out = [], left = r.laps - c.lapsDone;
+    const has = re => re.test(t);
+    const other = this.carNamed(t, c), mate = r.cars.find(x => x.team === c.team && x !== c);
+    if (has(/\b(repete|pas compris|j ai pas entendu|redis)\b/) && this.last.drv) return 'Je disais : ' + this.last.drv;
+    if (has(/\b(pneus|gomme|gommes|usure|grip|adherence|degradation|grain|graining|ils tiennent)\b/)) {
+      const w = c.wear, h = this.worstCorner(c);
+      if (isWetTyre(c.comp) && r.w < .15) out.push(`Les ${PL[c.comp]} fondent sur cette piste sèche, il faut changer !`);
+      else if (!isWetTyre(c.comp) && r.w > .3) out.push('Aucune adhérence avec ces slicks, c\'est une patinoire !');
+      else out.push(this.r([w < 25 ? 'Les pneus sont top, beaucoup de grip.' : w < 45 ? 'Ça va, un peu de dégradation à l\'arrière mais rien de grave.' : w < 65 ? 'Ils commencent à tomber, l\'arrière glisse en sortie de virage.' : w < 80 ? 'Ils sont bien usés, je perds du temps à chaque virage.' : 'Ils sont morts, je n\'ai plus aucun grip !']) + (c.temps[h] > 110 ? ` L'${CORNERS[h]} surchauffe.` : c.temps[h] < 78 ? ' Ils sont un peu froids.' : '') + (w > 55 && !c.pitReq ? ' On rentre bientôt ?' : ''));
+    }
+    if (has(/\b(voiture|equilibre|balance|comportement|feeling|sensations?|comment (tu la sens|est la voiture))\b/)) out.push(this.r(['La voiture est bien, je suis content de l\'équilibre.', 'Un peu de sous-virage dans les virages lents, sinon ça va.', 'L\'arrière est nerveux à la réaccélération.', 'Très bonne voiture aujourd\'hui, elle tourne bien.']));
+    if (has(/\b(ca va|tu vas bien|comment tu te sens|en forme|fatigue)\b/)) out.push(this.r(['Ça va, je suis concentré.', 'Tout va bien, on continue.', 'Un peu chaud dans le cockpit, mais ça va !']));
+    if (has(/\b(freins?|moteur|boite|direction|vibration|degats|probleme|casse)\b/)) out.push(this.r(['Les freins sont bons, rien à signaler.', 'Pas de problème de mon côté, le moteur tourne bien.', 'J\'ai eu une petite vibration au freinage mais ça va mieux.']));
+    if (has(/\b(batterie|ers|energie|recharge)\b/)) out.push(`La batterie est à ${Math.round(c.bat)} %, ${c.bat < 30 ? 'je dois recharger.' : 'j\'ai de quoi attaquer.'}`);
+    if (has(/\b(essence|carburant|fuel)\b/)) out.push('L\'essence, c\'est votre boulot ! Dites-moi si je dois économiser.');
+    if (has(/\b(meteo|pluie|pleut|mouille|piste|averse|ciel)\b/)) out.push(r.w > .5 ? 'Ça tombe fort, la visibilité est mauvaise.' : r.w > .15 ? 'Quelques gouttes, la piste est piégeuse par endroits.' : r.rain > 0 ? 'Je sens quelques gouttes sur la visière.' : this.r(['Sec pour l\'instant, ciel correct.', 'Piste sèche, adhérence correcte.']));
+    if (other) {
+      const ahead = other.pos < c.pos, gp = this.gapTo(c, other);
+      if (has(/\b(doubl\w*|depass\w*|passer|attaqu\w*|chope\w*|rattrap\w*)\b/)) out.push(ahead ? (c.pace > other.pace ? `Oui, je suis plus rapide que ${other.drv.last}, je vais le chercher.` : `Il est rapide, ${other.drv.last}… je vais essayer en fin de ligne droite.`) : `${other.drv.last} est derrière moi !`);
+      else if (has(/\b(attention|surveille|derriere|revient|menace)\b/)) out.push(ahead ? `Je le vois devant, je pousse.` : `Compris, je surveille ${other.drv.last} dans les rétros.`);
+      else out.push(ahead ? `Je le vois, ${other.drv.last} est à ${gp.txt} devant.` : `Ok, ${other.drv.last} est à ${gp.txt} derrière, je contrôle.`);
+    }
+    if (has(/\b(ecart|gap|devant|derriere|distance)\b/) && !other) out.push(g.a && g.ga != null ? (g.ga < 1.2 ? `Je suis juste derrière ${g.a.drv.last}, je cherche l'ouverture.` : `Je vois ${g.a.drv.last} au loin, je pousse pour revenir.`) : 'Personne devant, je gère mon rythme.');
+    if (has(/\b(tu veux rentrer|on rentre|faut rentrer|tu (veux|voudrais) (des|les)|on s arrete|on te rentre)\b/) || (has(/\b(rentrer|box|stands|arret)\b/) && has(/\?|\b(est ce que|tu veux|tu penses|tu crois)\b/))) out.push(c.wear > 60 ? 'Oui, les pneus sont finis, rentrons dès que possible !' : c.wear > 40 ? 'Je peux encore faire quelques tours, mais pas beaucoup plus.' : 'Non, les pneus sont encore bons, je préfère rester dehors.');
+    if (has(/\b(un ou deux arrets|strategie|quel plan|tu preferes|ton avis)\b/)) out.push(c.wear > 50 ? 'Mon avis : un arrêt bientôt, ces pneus ne tiendront pas jusqu\'au bout.' : left > 20 ? 'Les pneus tiennent bien, je pense qu\'un seul arrêt suffit.' : 'Je peux aller loin sur ces pneus, à vous de voir.');
+    if (has(/\b(plus vite|tu peux aller plus vite|rythme|accelere|tu es lent)\b/) && !out.length) out.push(c.mode === 'push' ? 'Je suis déjà à fond !' : 'Je peux pousser plus si vous voulez, dites-le moi.');
+    if (has(/\b(coequipier|equipier)\b/) && mate && !other) out.push(mate.dnf ? 'Il a abandonné, dommage pour l\'équipe.' : `Il est P${mate.pos}, ${mate.pos < c.pos ? 'devant moi' : 'derrière moi'}.`);
+    if (has(/\b(bravo|bien joue|super|genial|excellent|magnifique|top|parfait|enorme|champion)\b/)) out.push(this.r(['Merci ! Super boulot de l\'équipe !', 'Yes ! On continue comme ça.', 'Merci, la voiture est géniale aujourd\'hui.']));
+    if (has(/\b(salut|bonjour|coucou)\b/) && !out.length) out.push('Salut ! Radio claire, je vous entends bien.');
+    if (has(/\b(merci|ok|okay|compris|recu|copy|d accord)\b/) && !out.length) out.push(this.r(['Reçu.', 'Copy.', 'Compris.']));
+    if (!out.length) return null;
+    const txt = [...new Set(out)].slice(0, 2).join(' ');
+    this.last.drv = txt;
+    return txt;
+  },
+};
+
+/* =====================================================================
    MULTIJOUEUR — un pilote + un ingénieur
    La simulation tourne sur l'appareil du PILOTE (hôte) ; l'ingénieur reçoit
    l'état de la course et envoie ses messages radio.
@@ -2223,7 +2481,7 @@ const Brain = {
 function loadScript(src) { return new Promise((res, rej) => { const s = document.createElement('script'); s.src = src; s.onload = res; s.onerror = () => rej(new Error('load')); document.head.appendChild(s); }); }
 const NET_TOPICS = ['hello', 'cfg', 'go', 'start', 'p', 's', 'radio', 'say', 'ans', 'end', 'bye'];
 const Net = {
-  kind: null, code: null, owner: false, h: {}, partner: false, room: null, peer: null, conn: null, bc: null,
+  kind: null, code: null, owner: false, h: {}, partner: false, room: null, mq: null, bc: null,
   set(t, fn) { this.h[t] = fn; },
   fire(t, d) { const f = this.h[t]; if (f) try { f(d); } catch (e) { console.error(e); } },
   async open(code, owner) {
@@ -2232,7 +2490,7 @@ const Net = {
     let room = null;
     try { if (window.claude && window.claude.use) room = await window.claude.use('room'); } catch (e) { room = null; }
     if (room) return this.openRoom(room);
-    return this.openPeer();
+    return this.openMqtt();
   },
   async openRoom(room) {
     this.kind = 'room';
@@ -2248,43 +2506,53 @@ const Net = {
     bc.postMessage({ hi: 1 });
     return true;
   },
-  async openPeer() {
-    this.kind = 'peer';
-    if (!window.Peer) await loadScript('https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js');
-    const id = 'paddockf1-' + this.code.toLowerCase();
-    return new Promise((res, rej) => {
-      const wire = conn => {
-        this.conn = conn;
-        conn.on('open', () => this.setPartner(true));
-        conn.on('data', m => m && this.fire(m.t, m.d));
-        conn.on('close', () => this.setPartner(false));
-        conn.on('error', () => this.setPartner(false));
-      };
-      if (this.owner) {
-        const p = this.peer = new Peer(id);
-        p.on('open', () => res(true));
-        p.on('connection', wire);
-        p.on('error', e => rej(new Error(e.type === 'unavailable-id' ? 'Ce code est déjà utilisé, réessaie.' : 'Connexion impossible (' + e.type + ').')));
-      } else {
-        const p = this.peer = new Peer();
-        p.on('open', () => { wire(p.connect(id, { reliable: true })); res(true); });
-        p.on('error', e => rej(new Error(e.type === 'peer-unavailable' ? 'Aucune partie avec ce code.' : 'Connexion impossible (' + e.type + ').')));
-      }
+  // Relais via un serveur MQTT public (WebSocket sécurisé) : marche quel que soit le réseau (box, 4G/5G)
+  async openMqtt() {
+    this.kind = 'mqtt';
+    if (!window.mqtt) await loadScript('https://unpkg.com/mqtt@5.10.1/dist/mqtt.min.js');
+    const q = new URLSearchParams(location.search).get('mqtt');
+    const brokers = q ? [q] : ['wss://broker.hivemq.com:8884/mqtt', 'wss://broker.emqx.io:8084/mqtt', 'wss://test.mosquitto.org:8081/mqtt'];
+    this.me = Math.random().toString(36).slice(2, 10);
+    this.base = 'paddockf1/v2/' + this.code.toLowerCase() + '/';
+    for (const url of brokers) {
+      try {
+        this.mq = await new Promise((res, rej) => {
+          const c = mqtt.connect(url, { clientId: 'pf1-' + this.me, clean: true, connectTimeout: 7000, reconnectPeriod: 2000, keepalive: 20 });
+          const t = setTimeout(() => { c.end(true); rej(new Error('timeout')); }, 8000);
+          c.once('connect', () => { clearTimeout(t); res(c); });
+          c.once('error', e => { clearTimeout(t); c.end(true); rej(e); });
+        });
+        this.broker = url; break;
+      } catch (e) { this.mq = null; }
+    }
+    if (!this.mq) throw new Error('Impossible de joindre le serveur de jeu. Vérifie ta connexion Internet puis réessaie.');
+    this.mq.subscribe(this.base + '#', { qos: 0 });
+    this.mq.on('message', (topic, payload) => {
+      let m; try { m = JSON.parse(payload.toString()); } catch (e) { return; }
+      if (!m || m.f === this.me) return;
+      this.lastSeen = Date.now(); this.setPartner(true);
+      const t = topic.slice(this.base.length);
+      if (t === 'hb') { if (m.d && m.d.q) this.send('hb', {}); return; }
+      this.fire(t, m.d);
     });
+    this.hb = setInterval(() => { this.send('hb', {}); if (this.partner && Date.now() - (this.lastSeen || 0) > 10000) this.setPartner(false); }, 3000);
+    this.send('hb', { q: 1 });
+    return true;
   },
   setPartner(v) { if (this.partner === v) return; this.partner = v; this.fire('__partner', v); },
   send(t, d) {
     try {
       if (this.kind === 'room' && this.room) this.room.emit(t, d).catch(() => { });
-      else if (this.kind === 'peer' && this.conn && this.conn.open) this.conn.send({ t, d });
+      else if (this.kind === 'mqtt' && this.mq) this.mq.publish(this.base + t, JSON.stringify({ f: this.me, d }), { qos: 0 });
       else if (this.kind === 'local' && this.bc) this.bc.postMessage({ t, d });
     } catch (e) { }
   },
   close() {
-    try { if (this.room) this.room.leave(); if (this.peer) this.peer.destroy(); if (this.bc) this.bc.close(); } catch (e) { }
-    Object.assign(this, { kind: null, room: null, peer: null, conn: null, bc: null, partner: false, h: {} });
+    try { if (this.room) this.room.leave(); if (this.mq) this.mq.end(true); if (this.bc) this.bc.close(); } catch (e) { }
+    clearInterval(this.hb);
+    Object.assign(this, { kind: null, room: null, mq: null, bc: null, partner: false, h: {} });
   },
-  label() { return this.kind === 'room' ? 'salle temps réel de la page' : this.kind === 'peer' ? 'connexion pair-à-pair' : this.kind === 'local' ? 'test local' : '—'; },
+  label() { return this.kind === 'room' ? 'salle temps réel de la page' : this.kind === 'mqtt' ? 'serveur relais en ligne' : this.kind === 'local' ? 'test local' : '—'; },
 };
 
 const CK = ['S', 'M', 'H', 'I', 'W'], MODES = ['normal', 'push', 'save', 'defend'];
@@ -2310,7 +2578,7 @@ const Host = {
   },
   tick(now) {
     const r = Game.race; if (!r) return;
-    if (now - this.tP > 150) {
+    if (now - this.tP > (Net.kind === 'mqtt' ? 200 : 150)) {
       this.tP = now;
       const me = r.cars.find(c => c.isPlayer), team = r.cars.filter(c => c.team === r.myTeam);
       Net.send('p', {
@@ -2371,7 +2639,7 @@ const Mirror = {
     r.done = !!S.done;
   },
   step(r) {
-    const now = performance.now() - 220, T = r.T;
+    const now = performance.now() - (Net.kind === 'mqtt' ? 330 : 220), T = r.T;
     for (const c of r.cars) {
       const nb = c.nb; if (!nb.length) continue;
       let a = nb[0], b = nb[nb.length - 1], f = 1;
@@ -2417,7 +2685,7 @@ function renderMulti() {
     Sfx.init(); Speech.prime();
     $('#m-join').disabled = true; $('#m-join').textContent = 'Connexion…';
     try { await Net.open(code, false); } catch (e) { toast(e.message || 'Connexion impossible.', 5000); renderMulti(); return; }
-    Game.mp = { code, owner: false, cfg: null };
+    Game.mp = { code, owner: false, cfg: null, joinAt: Date.now() };
     wireLobby();
     const hi = setInterval(() => { if (!Game.mp || Game.mp.cfg || Net.kind == null) return clearInterval(hi); Net.send('hello', { v: 1 }); }, 800);
     Net.send('hello', { v: 1 });
@@ -2462,13 +2730,16 @@ function wireLobby() {
 function renderLobby() {
   const m = Game.mp, el = $('#scr-setup'), cfg = m.cfg, role = myRole();
   if (!cfg) {
-    el.innerHTML = `<div class="wrap"><div class="topbar"><button class="btn small" id="l-quit">← Quitter</button><h2>Partie ${esc(m.code)}</h2></div><div class="card"><p>Connexion à la partie… (${Net.label()})</p><p class="muted">Si rien ne se passe, vérifie le code et que ton ami a bien créé la partie.</p></div></div>`;
+    const waited = Date.now() - (m.joinAt || Date.now());
+    el.innerHTML = `<div class="wrap"><div class="topbar"><button class="btn small" id="l-quit">← Quitter</button><h2>Partie ${esc(m.code)}</h2></div><div class="card"><p>${waited > 12000 ? '<b>Aucune réponse de la partie ' + esc(m.code) + '.</b>' : 'Connexion à la partie… (' + Net.label() + ')'}</p><p class="muted">${waited > 12000 ? 'Vérifie le code, que ton ami est bien sur l\'écran avec le code affiché, et que vous utilisez la même adresse du jeu (même site, même version : rechargez tous les deux la page).' : 'Recherche de ton ami…'}</p>${waited > 12000 ? '<button class="btn" id="l-retry">Réessayer</button>' : ''}</div></div>`;
+    if ($('#l-retry')) $('#l-retry').onclick = () => { m.joinAt = Date.now(); Net.send('hello', { v: 1 }); renderLobby(); };
+    clearTimeout(m.waitT); m.waitT = setTimeout(() => { if (Game.mp === m && !m.cfg && $('#scr-setup').classList.contains('on')) renderLobby(); }, 13000);
     $('#l-quit').onclick = () => { Net.close(); Game.mp = null; renderMulti(); };
     return show('scr-setup');
   }
   const t = TEAM[cfg.team], d = DRV[cfg.drv], def = TRACKS[cfg.gp]; setTeamVars(t);
   el.innerHTML = `<div class="wrap">
-    <div class="topbar"><button class="btn small" id="l-quit">← Quitter</button><h2>Course à deux</h2><span class="chip">${Net.label()}</span></div>
+    <div class="topbar"><button class="btn small" id="l-quit">← Quitter</button><h2>Course à deux</h2><span class="chip">${Net.label()}</span><button class="btn small" id="l-set">⚙ Réglages</button></div>
     <div class="grid2">
       <div class="card" style="display:grid;gap:12px;align-content:start">
         <div class="kicker">Code de la partie</div>
@@ -2488,6 +2759,7 @@ function renderLobby() {
       </div>
     </div></div>`;
   $('#l-quit').onclick = () => { Net.send('bye', {}); Net.close(); Game.mp = null; Game.multi = false; renderHome(); };
+  $('#l-set').onclick = () => settingsModal();
   $('#l-copy').onclick = () => { navigator.clipboard.writeText(m.code).then(() => toast('Code copié.'), () => toast('Sélectionne le code pour le copier.')); };
   if (m.owner) {
     $('#l-gp').onchange = e => { cfg.gp = +e.target.value; Net.send('cfg', cfg); renderLobby(); };
@@ -2583,6 +2855,7 @@ function renderHome() {
     ${s ? `<button class="btn big primary" id="h-cont"><span>Continuer la saison<br><small style="font-weight:600;opacity:.85">${esc(t.name)} · ${s.role === 'manager' ? 'Manager' : 'Pilote ' + esc(DRV[s.drv].last)} · Manche ${Math.min(s.round + 1, 24)}/24</small></span><span>▶</span></button>` : ''}
     <button class="btn big ${s ? '' : 'primary'}" id="h-new"><span>Nouvelle saison</span><span>→</span></button>
     <button class="btn big" id="h-quick"><span>Course rapide</span><span>→</span></button>
+    <button class="btn big" id="h-set"><span>⚙ Réglages <small style="font-weight:600;opacity:.8">· voix, qualité graphique</small></span><span>→</span></button>
     <button class="btn big" id="h-multi"><span>Course à deux <small style="font-weight:600;opacity:.8">· un pilote + un ingénieur</small></span><span>→</span></button>
     <p class="note">Clavier : flèches ou ZQSD/WASD pour piloter · V (maintenu) pour parler à la radio · C pour changer de caméra · B pour demander le box · Échap pour la pause. Manette et écran tactile pris en charge.<br>Pour la radio vocale, autorise le micro (Chrome, Edge ou Safari). Jeu de fan non officiel.</p>
   </div></div>`;
@@ -2596,6 +2869,7 @@ function renderHome() {
   };
   $('#h-quick').onclick = () => renderSetup('quick');
   $('#h-multi').onclick = renderMulti;
+  $('#h-set').onclick = () => settingsModal();
   show('scr-home');
 }
 
@@ -2621,7 +2895,7 @@ function renderSetup(kind) {
         ${S.role === 'pilot' || kind === 'multi' ? `<div class="opt"><label>Niveau des adversaires</label><div class="seg" id="o-ai">${AI_LV.map((x, i) => `<button data-v="${i}" class="${S.ai === i ? 'on' : ''}">${x.n}</button>`).join('')}</div></div>
         <div class="opt"><label>Aides au pilotage</label><div class="seg" id="o-as">${ASSISTS.map((x, i) => `<button data-v="${i}" class="${S.assist === i ? 'on' : ''}" title="${x.d}">${x.n}</button>`).join('')}</div></div>` : ''}
         <div class="opt"><label>Voix à la radio</label><div class="seg" id="o-voice"><button data-v="1" class="${p.voice ? 'on' : ''}">Activées</button><button data-v="0" class="${!p.voice ? 'on' : ''}">Texte seul</button></div></div>
-        <div class="opt"><label>Qualité graphique</label><div class="seg" id="o-q">${['Basse', 'Moyenne', 'Haute'].map((x, i) => `<button data-v="${i}" class="${p.quality === i ? 'on' : ''}">${x}</button>`).join('')}</div></div>
+        <div class="opt"><label>Qualité graphique</label><div class="seg" id="o-q">${['Basse', 'Moyenne', 'Haute', 'Ultra'].map((x, i) => `<button data-v="${i}" class="${p.quality === i ? 'on' : ''}">${x}</button>`).join('')}</div></div>
         <div class="opt"><label>Pilotes et ingénieurs aidés par l'IA</label><div class="seg" id="o-iai"><button data-v="1" class="${p.ai !== false ? 'on' : ''}">Oui</button><button data-v="0" class="${p.ai === false ? 'on' : ''}">Non</button></div></div>
         <div class="opt"><label>Radio des autres écuries</label><div class="seg" id="o-oth"><button data-v="1" class="${p.others ? 'on' : ''}">Oui</button><button data-v="0" class="${!p.others ? 'on' : ''}">Non</button></div></div>
       </div></div>
@@ -2819,7 +3093,7 @@ function buildWall() {
     </div>
     <div class="wbot"><div class="asks" id="w-asks"></div><div class="radiodock">
       <div class="chan" id="w-chan">${mine.map((c, i) => `<button data-i="${i}" class="${i ? '' : 'on'}" title="Canal radio">${c.code}</button>`).join('')}</div>
-      <button class="ptt" id="w-ptt" title="Maintiens (ou touche V) pour parler">🎙 PARLER</button>
+      <button class="ptt" id="w-ptt" title="Maintiens appuyé (ou touche V) pour parler, relâche pour envoyer">🎙 MAINTENIR POUR PARLER</button>
       <input id="w-in" placeholder="Écris au pilote… ex : « box, mets des durs »" autocomplete="off" enterkeyhint="send">
       <button class="btn small team" id="w-send">Envoyer</button>
       <div class="quick">
@@ -3171,6 +3445,38 @@ function endQuali() {
   renderWeekend();
 }
 
+/* ---------------- RÉGLAGES ---------------- */
+function settingsModal(onClose) {
+  const p = Game.prefs;
+  const draw = () => {
+    const vs = Speech.sorted();
+    const opts = sel => `<option value="">Automatique (meilleure voix)</option>` + vs.map(v => `<option value="${esc(v.name)}" ${v.name === sel ? 'selected' : ''}>${Speech.rank(v) >= 20 ? '★ ' : ''}${esc(v.name)}</option>`).join('');
+    $('#modal-card').innerHTML = `<h3 style="font-size:22px;font-weight:900;font-style:italic;margin-bottom:12px">Réglages</h3>
+      <div class="opts">
+        <div class="opt"><label for="st-ve">Voix de l'ingénieur</label><div style="display:flex;gap:6px;min-width:0"><select id="st-ve" class="btn" style="max-width:230px">${opts(p.voiceEng)}</select><button class="btn small" id="st-vet" aria-label="Écouter">▶</button></div></div>
+        <div class="opt"><label for="st-vd">Voix du pilote</label><div style="display:flex;gap:6px;min-width:0"><select id="st-vd" class="btn" style="max-width:230px">${opts(p.voiceDrv)}</select><button class="btn small" id="st-vdt" aria-label="Écouter">▶</button></div></div>
+        <p class="muted" style="font-size:13px;margin:0">${vs.length ? vs.length + ' voix françaises trouvées.' : 'Aucune voix française trouvée pour l\'instant.'} Pour des voix bien plus humaines sur iPad : <b>Réglages de l'iPad → Accessibilité → Contenu énoncé → Voix → Français</b>, puis télécharge une voix « Améliorée » ou « Premium » (par exemple Thomas, Audrey ou Aurélie). Reviens ici : elle apparaît avec une ★.</p>
+        <div class="opt"><label>Voix à la radio</label><div class="seg" id="st-v"><button data-v="1" class="${p.voice ? 'on' : ''}">Activées</button><button data-v="0" class="${!p.voice ? 'on' : ''}">Texte seul</button></div></div>
+        <div class="opt"><label>Qualité graphique</label><div class="seg" id="st-q">${['Basse', 'Moyenne', 'Haute', 'Ultra'].map((x, i) => `<button data-v="${i}" class="${p.quality === i ? 'on' : ''}">${x}</button>`).join('')}</div></div>
+        <p class="muted" style="font-size:13px;margin:0">Haute : ombres, herbe, public animé. Ultra : ombres et image plus fines, plus de décor (iPad récent ou ordinateur). Appliqué à la prochaine course.</p>
+        <div class="opt"><label>Son des moteurs</label><div class="seg" id="st-s"><button data-v="1" class="${p.sound ? 'on' : ''}">Oui</button><button data-v="0" class="${!p.sound ? 'on' : ''}">Non</button></div></div>
+        <div class="opt"><label>Radio des autres écuries</label><div class="seg" id="st-o"><button data-v="1" class="${p.others ? 'on' : ''}">Oui</button><button data-v="0" class="${!p.others ? 'on' : ''}">Non</button></div></div>
+        <button class="btn primary" id="st-ok">Fermer</button>
+      </div>`;
+    $('#st-ve').onchange = e => { p.voiceEng = e.target.value; Store.savePrefs(p); };
+    $('#st-vd').onchange = e => { p.voiceDrv = e.target.value; Store.savePrefs(p); };
+    $('#st-vet').onclick = () => Speech.test('eng'); $('#st-vdt').onclick = () => Speech.test('drv');
+    const seg = (id, fn) => $$('#' + id + ' button').forEach(b => b.onclick = () => { fn(b.dataset.v); Store.savePrefs(p); draw(); });
+    seg('st-v', v => p.voice = v === '1'); seg('st-q', v => p.quality = +v);
+    seg('st-s', v => { p.sound = v === '1'; if (Game.raf) { Sfx.init(); p.sound ? Sfx.engineOn() : Sfx.engineOff(); } });
+    seg('st-o', v => p.others = v === '1');
+    $('#st-ok').onclick = () => { $('#modal').classList.remove('on'); onClose && onClose(); };
+  };
+  draw();
+  $('#modal').classList.add('on');
+  if (Speech.ok && !Speech.voices().length) speechSynthesis.onvoiceschanged = () => { if ($('#modal').classList.contains('on') && $('#st-ve')) draw(); };
+}
+
 /* ---------------- PAUSE / FIN ---------------- */
 function pauseMenu() {
   Game.paused = !Game.multi; Speech.stop();
@@ -3180,7 +3486,7 @@ function pauseMenu() {
       <button class="btn primary" id="p-res">▶ Reprendre</button>
       ${Game.multi ? '<p class="muted" style="margin:0">Course à deux : la course continue pendant ce menu.</p>' : ''}
       ${quali ? '<button class="btn" id="p-endq">Terminer la qualif</button>' : Game.remote ? '' : '<button class="btn" id="p-sim">⏩ Terminer la course (classement actuel)</button>'}
-      <button class="btn" id="p-qual">Qualité graphique : ${['basse', 'moyenne', 'haute'][Game.prefs.quality]} (changer)</button>
+      <button class="btn" id="p-set">⚙ Réglages (voix, qualité…)</button>
       <button class="btn" id="p-voice">${Game.prefs.voice ? '🔇 Couper les voix' : '🔊 Activer les voix'}</button>
       ${true ? `<button class="btn" id="p-sound">${Game.prefs.sound ? '🔇 Couper le moteur' : '🔊 Son moteur'}</button>` : ''}
       <button class="btn" id="p-quit">✕ Quitter ${quali ? 'la qualif' : 'la course (non comptée)'}</button>
@@ -3193,7 +3499,7 @@ function pauseMenu() {
   if ($('#p-endq')) $('#p-endq').onclick = () => { $('#modal').classList.remove('on'); endQuali(); };
   $('#p-voice').onclick = () => { Game.prefs.voice = !Game.prefs.voice; Store.savePrefs(Game.prefs); close(); };
   if ($('#p-sound')) $('#p-sound').onclick = () => { Game.prefs.sound = !Game.prefs.sound; Store.savePrefs(Game.prefs); Game.prefs.sound ? Sfx.engineOn() : Sfx.engineOff(); close(); };
-  $('#p-qual').onclick = () => { Game.prefs.quality = (Game.prefs.quality + 1) % 3; Store.savePrefs(Game.prefs); toast('Qualité ' + ['basse', 'moyenne', 'haute'][Game.prefs.quality] + ' : appliquée à la prochaine course.'); close(); };
+  $('#p-set').onclick = () => settingsModal(() => { if (!Game.multi) Game.paused = false; Game.last = performance.now(); });
   $('#p-quit').onclick = () => { $('#modal').classList.remove('on'); Game.paused = false; stopRace(); if (Game.multi) { Net.send('bye', {}); Game.remote = Game.host = false; return renderLobby(); } if (quali) renderWeekend(); else Game.wk.quick ? renderSetup('quick') : renderHub(); };
 }
 function finishRace() {
