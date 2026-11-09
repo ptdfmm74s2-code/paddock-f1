@@ -2489,7 +2489,7 @@ const CarGLB = {
   tex(cv) { const t = new THREE.CanvasTexture(cv); t.flipY = false; t.encoding = THREE.sRGBEncoding; t.anisotropy = 4; return t; },
   // livrée : bleu nuit et noir -> couleur de carrosserie, jaune -> accent, logos Red Bull effacés
   recolor(map, t) {
-    const W = 1024, [cv, g] = this.canvasOf(map.image, W), id = g.getImageData(0, 0, W, W), d = id.data;
+    const W = 512, [cv, g] = this.canvasOf(map.image, W), id = g.getImageData(0, 0, W, W), d = id.data;
     const body = this.srgb(t.body), dist = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
     const accHex = dist(this.srgb(t.color), body) > 90 ? t.color : t.acc, acc = this.srgb(accHex);
     const ref = [[0, 0, 0], [0, 0, 50], [230, 166, 0], [230, 24, 33], [255, 255, 255]];
@@ -2508,7 +2508,7 @@ const CarGLB = {
   },
   // autocollants : nom de l'écurie sur les pontons et l'aileron arrière
   decals(t) {
-    const W = 1024, [cv, g] = this.canvasOf(null, W);
+    const W = 512, [cv, g] = this.canvasOf(null, W); g.scale(.5, .5); // textures réduites : moins de mémoire sur iPad
     const b = this.srgb(t.body), lum = .3 * b[0] + .59 * b[1] + .11 * b[2];
     const ink = lum > 150 ? '#141414' : '#f4f4f4';
     g.fillStyle = ink; g.textAlign = 'center'; g.textBaseline = 'middle';
@@ -2522,7 +2522,7 @@ const CarGLB = {
   // numéro et nom du pilote
   numTex(drv) {
     if (this.num[drv.code]) return this.num[drv.code];
-    const W = 512, [cv, g] = this.canvasOf(null, W), t = drv.team;
+    const W = 256, [cv, g] = this.canvasOf(null, W), t = drv.team; g.scale(.5, .5);
     g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillStyle = '#f4f4f4';
     g.font = '700 40px Arial, sans-serif'; g.fillText((drv.first[0] + '.' + drv.last).toUpperCase(), 300, 66);
     g.font = '800 46px Arial, sans-serif'; g.fillText(drv.name.toUpperCase(), 256, 150);
@@ -2886,7 +2886,9 @@ const Sfx = {
    ===================================================================== */
 const Neural = {
   st: 'off', mod: null, id: null, err: '', prog: 0, cache: new Map(),
-  avail() { return !window.claude && typeof WebAssembly === 'object'; },
+  // Désactivée sur iPad / iPhone : le modèle (~65 Mo) + la 3D dépassaient la mémoire autorisée par iOS → plantage
+  ios() { return /iP(ad|hone|od)/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1); },
+  avail() { return !window.claude && typeof WebAssembly === 'object' && !this.ios(); },
   async lib() {
     if (!this.mod) this.mod = await import('https://cdn.jsdelivr.net/npm/@diffusionstudio/vits-web@1.0.3/+esm');
     return this.mod;
@@ -2987,7 +2989,7 @@ const Speech = {
     // iPad : si le micro est resté ouvert sans qu'on parle, on le ferme avant que la voix démarre
     // (sinon iOS bascule son mode audio pendant la phrase et l'image se fige)
     if (Mic.isIOS && Mic.running && !Mic.gate) Mic.idleOff();
-    if (Game.prefs.neural && Neural.st === 'ready') {
+    if (Game.prefs.neural && Neural.st === 'ready' && Neural.avail()) {
       Neural.say(this.clean(text), role, onEnd).catch(e => { console.warn('voix fluide', e); Neural.st = 'error'; Neural.err = 'calcul de la voix impossible sur cet appareil'; this.say(text, role, seed, onEnd); });
       return;
     }
@@ -4862,7 +4864,7 @@ function settingsModal(onClose) {
     const opts = sel => `<option value="">Automatique (meilleure voix)</option>` + vs.map(v => `<option value="${esc(v.name)}" ${v.name === sel ? 'selected' : ''}>${Speech.rank(v) >= 20 ? '★ ' : ''}${esc(v.name)}</option>`).join('');
     $('#modal-card').innerHTML = `<h3 style="font-size:22px;font-weight:900;font-style:italic;margin-bottom:12px">Réglages</h3>
       <div class="opts">
-        <div class="opt"><label>Voix fluide (neuronale)</label><div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">${!Neural.avail() ? '<span class="muted" style="font-size:13px">Disponible dans l\'appli installée (site), pas sur claude.ai.</span>' : Neural.st === 'ready' ? `<div class="seg" id="st-nn"><button data-v="1" class="${p.neural ? 'on' : ''}">Activée</button><button data-v="0" class="${!p.neural ? 'on' : ''}">Désactivée</button></div><button class="btn small" id="st-nt">▶</button>` : Neural.st === 'loading' ? `<span class="muted" id="st-np">Téléchargement… ${Math.round(Neural.prog * 100)} %</span>` : `<button class="btn small team" id="st-nd">Télécharger (≈ 65 Mo)</button>`}</div></div>
+        <div class="opt"><label>Voix fluide (neuronale)</label><div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">${!Neural.avail() ? (Neural.ios() ? '<span class="muted" style="font-size:13px">Désactivée sur iPad : elle prenait trop de mémoire avec la 3D et faisait planter le jeu.</span>' : '<span class="muted" style="font-size:13px">Disponible dans l\'appli installée (site), pas sur claude.ai.</span>') : Neural.st === 'ready' ? `<div class="seg" id="st-nn"><button data-v="1" class="${p.neural ? 'on' : ''}">Activée</button><button data-v="0" class="${!p.neural ? 'on' : ''}">Désactivée</button></div><button class="btn small" id="st-nt">▶</button>` : Neural.st === 'loading' ? `<span class="muted" id="st-np">Téléchargement… ${Math.round(Neural.prog * 100)} %</span>` : `<button class="btn small team" id="st-nd">Télécharger (≈ 65 Mo)</button>`}</div></div>
         ${Neural.avail() ? `<p class="muted" style="font-size:13px;margin:0">Une vraie voix de synthèse neuronale, calculée sur l'iPad : beaucoup plus naturelle et fluide, avec un effet radio. Téléchargement unique (Wi-Fi conseillé), puis elle marche sans Internet.${Neural.st === 'error' ? ' <b style="color:var(--warn)">Échec : ' + esc(Neural.err) + '. Réessaie.</b>' : ''}</p>` : ''}
         <div class="opt"><label for="st-ve">Voix de l'ingénieur</label><div style="display:flex;gap:6px;min-width:0"><select id="st-ve" class="btn" style="max-width:230px">${opts(p.voiceEng)}</select><button class="btn small" id="st-vet" aria-label="Écouter">▶</button></div></div>
         <div class="opt"><label for="st-vd">Voix du pilote</label><div style="display:flex;gap:6px;min-width:0"><select id="st-vd" class="btn" style="max-width:230px">${opts(p.voiceDrv)}</select><button class="btn small" id="st-vdt" aria-label="Écouter">▶</button></div></div>
