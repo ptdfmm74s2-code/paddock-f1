@@ -146,7 +146,7 @@ table.std td.r, table.std th.r { text-align: right; }
 .tower { background: rgba(10, 12, 16, .92); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; display: flex; flex-direction: column; min-height: 0; }
 .tower-head { display: flex; justify-content: space-between; align-items: center; padding: 6px 10px; background: var(--red); color: #fff; font-weight: 900; font-style: italic; }
 .tower-body { overflow: auto; flex: 1; }
-.trow { display: grid; grid-template-columns: 22px 4px 40px 1fr auto 22px; gap: 6px; align-items: center; padding: 2px 8px; font-size: 13.5px; font-weight: 700; border-bottom: 1px solid rgba(255, 255, 255, .04); cursor: pointer; }
+.trow { display: grid; grid-template-columns: 22px 16px 4px 40px 1fr auto 22px; gap: 6px; align-items: center; padding: 2px 8px; font-size: 13.5px; font-weight: 700; border-bottom: 1px solid rgba(255, 255, 255, .04); cursor: pointer; }
 .trow .p { text-align: right; color: var(--muted); }
 .trow .g { text-align: right; font-weight: 600; color: #cfd6e2; }
 .trow.mine { background: color-mix(in srgb, var(--team) 26%, transparent); }
@@ -268,7 +268,7 @@ table.std td.r, table.std th.r { text-align: right; }
 #scr-cockpit .view { position: absolute; inset: 0; }
 .hud-tower { position: absolute; top: max(10px, env(safe-area-inset-top)); left: 10px; width: 190px; background: rgba(8, 10, 14, .82); border-radius: 6px; overflow: hidden; font-size: 13px; }
 .hud-tower .tower-head { padding: 4px 8px; font-size: 13px; }
-.hud-tower .trow { grid-template-columns: 18px 4px 34px 0 1fr 20px; gap: 5px; padding: 1px 6px; font-size: 12.5px; }
+.hud-tower .trow { grid-template-columns: 18px 14px 4px 34px 0 1fr 20px; gap: 5px; padding: 1px 6px; font-size: 12.5px; }
 .hud-tower .trow .nm { display: none; }
 .hud-top { position: absolute; top: max(10px, env(safe-area-inset-top)); right: 10px; display: flex; gap: 6px; align-items: flex-start; flex-wrap: wrap; justify-content: flex-end; max-width: calc(100% - 220px); }
 .hud-box { background: rgba(8, 10, 14, .82); border-radius: 8px; padding: 6px 10px; font-weight: 700; }
@@ -368,6 +368,11 @@ table.std td.r, table.std th.r { text-align: right; }
 .comm.show { opacity: 1; transform: translate(-50%, 0); }
 .comm .lbl { display: flex; align-items: center; gap: 5px; font-size: 10px; font-weight: 900; letter-spacing: .1em; color: #ffd400; margin-bottom: 2px; }
 .tbtn .ic { width: 28px; height: 28px; }
+.trow .mv { display: inline-flex; align-items: center; justify-content: center; gap: 1px; font-size: 9px; font-weight: 900; line-height: 1; transform-origin: center; }
+.trow .mv .ic { width: 11px; height: 11px; vertical-align: 0; }
+.trow .mv.up { color: #2BD67B; } .trow .mv.dn { color: #ff2a1f; }
+.trow .mv b { font-size: 9px; }
+#ck-qnext { bottom: 180px; }
 </style>
 </head>
 <body>
@@ -512,6 +517,8 @@ const IC_P = {
   star: '<path d="M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1-4.4-4.3 6.1-.9z" fill="currentColor"/>',
   warn: '<path d="M12 3l10 18H2z"/><path d="M12 10v5M12 18v.5"/>',
   comm: '<rect x="8" y="2.5" width="8" height="12" rx="4"/><path d="M4.5 11a7.5 7.5 0 0 0 15 0M12 18.5V22"/><path d="M2 7v4M22 7v4"/>',
+  up: '<path d="M12 4l9 14H3z" fill="currentColor" stroke="none"/>',
+  down: '<path d="M12 20L3 6h18z" fill="currentColor" stroke="none"/>',
   garage: '<path d="M3 10l9-6 9 6v11H3z"/><path d="M7 21v-7h10v7M7 17h10"/>',
 };
 const ic = (n, cls = '') => `<svg class="ic ${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${IC_P[n] || ''}</svg>`;
@@ -827,7 +834,7 @@ class Race {
     if (p < 3) {
       const out = part.slice(q.cut[p - 1]);
       out.forEach(c => c.qOut = p);
-      q.state = 'break'; q.brk = 12;
+      q.state = 'break'; q.brk = Infinity; // on attend le bouton « Passer à la Q2 / Q3 »
       this.ev.push({ k: 'qend', part: p, out, top: part[0] });
     } else {
       q.done = true; q.state = 'done'; this.done = true;
@@ -4636,7 +4643,7 @@ const QBrain = {
           const was = x.qOut === ev.part;
           if (x.qOut && !was) continue;
           const p = x.pos;
-          if (P(x)) B.eng(x, was ? `C'est fini pour nous, éliminé en Q${ev.part}, P${p}. Désolé, on fera mieux en course.` : ev.part < 3 ? `Qualifié pour la Q${ev.part + 1} ! P${p}. Beau travail, reviens au garage.` : p === 1 ? 'POLE POSITION !!! Incroyable, quel tour ! Bravo !' : p <= 3 ? `P${p}, ${p === 2 ? 'première ligne' : 'deuxième ligne'} ! Superbe qualif.` : `P${p} sur la grille. On va remonter en course.`);
+          if (P(x)) B.eng(x, was ? `C'est fini pour nous, éliminé en Q${ev.part}, P${p}. Désolé, on fera mieux en course.` : ev.part < 3 ? `Qualifié pour la Q${ev.part + 1} ! P${p}. Beau travail. Appuie sur « Passer à la Q${ev.part + 1} » quand tu es prêt.` : p === 1 ? 'POLE POSITION !!! Incroyable, quel tour ! Bravo !' : p <= 3 ? `P${p}, ${p === 2 ? 'première ligne' : 'deuxième ligne'} ! Superbe qualif.` : `P${p} sur la grille. On va remonter en course.`);
           else if (M(x)) B.later(() => B.drv(x, was ? `Éliminé en Q${ev.part}… Je n'ai pas trouvé le grip.` : ev.part < 3 ? `On passe en Q${ev.part + 1}, super !` : p === 1 ? 'La pole !!! Merci à toute l\'équipe !' : `P${p}, c'est correct.`), 1 + Math.random() * 2);
         }
         break;
@@ -5421,6 +5428,7 @@ function buildWall() {
       <span class="gpname">${flagSVG(def.flag)} ${esc(gpName(def))}</span>
       <span class="lap num" id="w-lap"></span><span class="flagst" id="w-flag"></span><span id="w-wx" class="muted"></span>
       <span class="sp"></span>
+      <button class="btn small primary" id="w-qnext" hidden>${ic('ff')} <span></span></button>
       <div class="simspeed" id="w-speed" title="Vitesse de la simulation" ${Game.multi ? 'hidden' : ''}>${[1, 2, 4, 8].map(x => `<button data-v="${x}" class="${x === 1 ? 'on' : ''}">×${x}</button>`).join('')}</div>
       <button class="btn small" id="w-voice" title="Voix radio">${ic(prefs.voice ? 'vol' : 'mute')}</button>
       <button class="btn small" id="w-eng" title="Son des moteurs">${ic('car')} ${Game.prefs.sound ? 'Son' : 'Muet'}</button>
@@ -5455,6 +5463,7 @@ function buildWall() {
   $$('#w-speed button').forEach(b => b.onclick = () => { Game.speed = +b.dataset.v; $$('#w-speed button').forEach(x => x.classList.toggle('on', x === b)); });
   $('#w-voice').onclick = e => { prefs.voice = !prefs.voice; Store.savePrefs(prefs); e.currentTarget.innerHTML = ic(prefs.voice ? 'vol' : 'mute'); if (!prefs.voice) Speech.stop(); };
   $('#w-menu').onclick = pauseMenu;
+  $('#w-qnext').onclick = qNext;
   $('#w-flags').onclick = flagMenu;
   $$('#w-chan button').forEach(b => b.onclick = () => { Game.chan = mine[+b.dataset.i]; $$('#w-chan button').forEach(x => x.classList.toggle('on', x === b)); });
   const send = () => { const v = $('#w-in').value.trim(); if (!v) return; $('#w-in').value = ''; managerSend(v); };
@@ -5526,15 +5535,22 @@ function rebuildViews() {
 function renderTower(el, full) {
   const r = Game.race, L = r.T.L, lead = r.order[0];
   let html = '';
+  const now = performance.now(), mv = el._mv || (el._mv = {}), first = !el._mvInit; el._mvInit = true;
   r.order.forEach((c, i) => {
     let g;
+    // flèche verte (gagne des places) ou rouge (en perd) pendant quelques secondes
+    const s = mv[c.code] || (mv[c.code] = { p: i + 1, d: 0, n: 0, t: -1e9 });
+    if (s.p !== i + 1) { if (!first) { const n = s.p - (i + 1); s.n = s.d && Math.sign(n) === s.d && now - s.t < 3500 ? s.n + n : n; s.d = Math.sign(n); s.t = now; } s.p = i + 1; }
+    const age = (now - s.t) / 1000, act = s.d !== 0 && age < 4;
+    const mvHTML = act ? `<span class="mv ${s.d > 0 ? 'up' : 'dn'}" style="opacity:${clamp((4 - age) / 1, 0, 1).toFixed(2)};transform:scale(${(1 + .5 * Math.max(0, 1 - age / .35)).toFixed(2)})">${ic(s.d > 0 ? 'up' : 'down')}${Math.abs(s.n) > 1 ? '<b>' + Math.abs(s.n) + '</b>' : ''}</span>` : '<span class="mv"></span>';
+    const flash = act ? ` style="--c:${c.team.color};background-image:linear-gradient(90deg, ${s.d > 0 ? 'rgba(43,214,123,' : 'rgba(255,42,31,'}${(.45 * clamp(1 - age / 4, 0, 1)).toFixed(3)}), transparent 85%)"` : ` style="--c:${c.team.color}"`;
     if (r.q) { const p = c.qOut || r.q.part, t = c.qT[p - 1], t0 = r.order[0].qT[r.q.part - 1]; g = !isFinite(t) ? (c.qOut ? '—' : c.qPhase === 'garage' ? 'GARAGE' : c.qPhase === 'out' ? 'SORTIE' : c.qPhase === 'push' ? 'TOUR' : 'RETOUR') : c.qOut || i === 0 || !isFinite(t0) ? fmtLap(t) : fmtGap(t - t0); }
     else if (c.dnf) g = 'OUT';
     else if (c.pit) g = 'STAND';
     else if (i === 0) g = c.fin ? ic('chq') : 'Tour ' + Math.min(r.laps, Math.max(1, c.lapsDone + 1));
     else { const lapsDown = Math.floor((lead.dist - c.dist) / L); g = lapsDown >= 1 && !c.fin ? '+' + lapsDown + ' T' : fmtGap(Math.max(0, c.gap)); if (c.fin) g = (lapsDown >= 1 ? '+' + lapsDown + ' T' : g) + ' ' + ic('chq'); }
     const cls = (c.team === Game.team ? ' mine' : '') + (c.pit && !r.q ? ' pit' : '') + (c.dnf || c.qOut ? ' out' : '') + (r.fastest.c === c ? ' fl' : '') + (r.q && !c.qOut && r.q.part < 3 && i === r.q.cut[r.q.part - 1] ? ' cut' : '') + (r.q && c.qPhase === 'push' ? ' push' : '');
-    html += `<div class="trow${cls}" data-code="${c.code}" style="--c:${c.team.color}"><span class="p">${i + 1}</span><span class="tbar"></span><span>${c.code}</span>${full ? `<span class="nm">${esc(c.drv.last)}${r.q ? (c.qOut ? ' · éliminé Q' + c.qOut : c.qPhase === 'push' ? ' · tour lancé' : c.qPhase === 'out' ? ' · tour de sortie' : c.qPhase === 'in' ? ' · retour au stand' : ' · au garage') : c.pitReq && !c.pit ? ' · BOX' : ''}${c.mode !== 'normal' && c.team === Game.team ? ' · ' + ({ push: 'ATT', save: 'ÉCO', defend: 'DÉF' })[c.mode] : ''}</span>` : '<span></span>'}<span class="g num">${g}</span>${tyreHTML(c.comp)}</div>`;
+    html += `<div class="trow${cls}" data-code="${c.code}"${flash}><span class="p">${i + 1}</span>${mvHTML}<span class="tbar"></span><span>${c.code}</span>${full ? `<span class="nm">${esc(c.drv.last)}${r.q ? (c.qOut ? ' · éliminé Q' + c.qOut : c.qPhase === 'push' ? ' · tour lancé' : c.qPhase === 'out' ? ' · tour de sortie' : c.qPhase === 'in' ? ' · retour au stand' : ' · au garage') : c.pitReq && !c.pit ? ' · BOX' : ''}${c.mode !== 'normal' && c.team === Game.team ? ' · ' + ({ push: 'ATT', save: 'ÉCO', defend: 'DÉF' })[c.mode] : ''}</span>` : '<span></span>'}<span class="g num">${g}</span>${tyreHTML(c.comp)}</div>`;
   });
   el.innerHTML = html;
   if (!el._bound) { el._bound = true; el.addEventListener('click', e => { const row = e.target.closest('.trow'); if (!row || !Game.world) return; const c = Game.race.cars.find(x => x.code === row.dataset.code); Game.world.focus(c, 25); toast('Caméra TV sur ' + c.drv.name); }); }
@@ -5672,12 +5688,14 @@ function fieldHTML() {
   const r = Game.race;
   return `<table class="std" style="font-size:12.5px"><tr><th>P</th><th>Pilote</th><th>Pneus</th><th class="r">Âge</th><th class="r">Usure</th><th class="r">Arrêts</th><th>Utilisés</th></tr>${r.order.map((c, i) => `<tr class="${c.team === Game.team ? 'me' : ''}"><td>${i + 1}</td><td><span class="tbar" style="--c:${c.team.color}"></span> ${c.code}${c.pit ? ' <small style="color:var(--warn)">STAND</small>' : ''}${c.dnf ? ' <small>OUT</small>' : ''}</td><td>${tyreHTML(c.comp)}</td><td class="r">${c.age}</td><td class="r">${Math.round(c.wear)} %</td><td class="r">${c.stops}</td><td>${[...c.used].map(k => tyreHTML(k)).join('')}</td></tr>`).join('')}</table>`;
 }
-function qLabel(r) { const q = r.q; return q.done ? 'Qualifications terminées' : q.state === 'break' ? `Fin de Q${q.part} · Q${q.part + 1} dans ${Math.ceil(q.brk)} s` : `Q${q.part} · ${q.t > 0 ? fmtClock(q.t) : 'drapeau à damier'}`; }
+function qNext() { const r = Game.race; if (r && r.q && r.q.state === 'break') r.qualiNext(); }
+function qLabel(r) { const q = r.q; return q.done ? 'Qualifications terminées' : q.state === 'break' ? `Fin de la Q${q.part}` : `Q${q.part} · ${q.t > 0 ? fmtClock(q.t) : 'drapeau à damier'}`; }
 function updateWallTop() {
   renderAsks();
   const r = Game.race, lead = r.order[0];
   $('#w-lap').textContent = r.q ? qLabel(r) : r.phase === 'formation' ? 'Tour de formation' : r.phase === 'grid' ? 'Grille de départ' : `Tour ${Math.min(r.laps, Math.max(1, lead.lapsDone + 1))}/${r.laps}`;
   const f = $('#w-flag');
+  { const b = $('#w-qnext'), on = !!(r.q && r.q.state === 'break'); if (b.hidden === on) b.hidden = !on; if (on) $('span', b).textContent = `Passer à la Q${r.q.part + 1}`; }
   if (r.q) { const chq = r.q.chq || r.q.state !== 'run'; f.innerHTML = chq ? ic('chq') + ' FIN DE Q' + r.q.part : 'VERT'; f.style.background = chq ? '#fff' : '#1a8d4a'; f.style.color = chq ? '#000' : '#fff'; }
   else if (r.flag) { f.innerHTML = ic('chq') + ' DRAPEAU À DAMIER'; f.style.background = '#fff'; f.style.color = '#000'; }
   else if (r.phase === 'formation') { f.textContent = 'FORMATION'; f.style.background = '#1a8d4a'; f.style.color = '#fff'; }
@@ -5721,11 +5739,12 @@ function buildCockpit() {
       </div>
     </div>
     ${!quali && r.phase === 'formation' ? `<button class="btn small skipf" id="ck-skipf">${ic('ff')} Passer le tour de formation</button>` : ''}
-    ${quali ? `<button class="btn primary big qgo" id="ck-go" hidden>${ic('garage')} SORTIR EN PISTE</button>` : ''}
+    ${quali ? `<button class="btn primary big qgo" id="ck-go" hidden>${ic('garage')} SORTIR EN PISTE</button><button class="btn primary big qgo" id="ck-qnext" hidden>${ic('ff')} <span></span></button>` : ''}
     <div class="touch"><div class="tbtn" data-t="l" aria-label="Gauche">${ic('left')}</div><div class="tbtn" data-t="r" aria-label="Droite">${ic('right')}</div><div class="tbtn" data-t="b" aria-label="Frein">FREIN</div><div class="tbtn" data-t="t" aria-label="Accélérateur">GAZ</div></div>`;
   Radio.mount($('#ck-view')); Comm.mount($('#ck-view'));
   $('#ck-view').insertAdjacentHTML('beforeend', `<div class="lights" id="ck-lights" style="display:${quali ? 'none' : 'flex'}">${'<i></i>'.repeat(5)}</div><div class="bigmsg" id="ck-big"></div>`);
   $('#ck-view-btn').onclick = cycleView;
+  Game._ersM = null;
   $('#ck-ersb').onclick = () => cycleERS();
   $('#ck-ovt').onclick = () => useOvertake();
   if ($('#ck-skipf')) $('#ck-skipf').onclick = () => { if (Game.race.phase === 'formation') Game.race.endFormation(); };
@@ -5739,6 +5758,7 @@ function buildCockpit() {
   document.addEventListener('mic-denied', showText);
   $('#ck-txt').addEventListener('submit', e => { e.preventDefault(); const i = $('#ck-txt-in'), v = i.value.trim(); if (!v) return; i.value = ''; i.blur(); Brain.pilotSays(v); });
   $('#ck-txt-in').addEventListener('keydown', e => e.stopPropagation());
+  if ($('#ck-qnext')) $('#ck-qnext').onclick = qNext;
   if ($('#ck-go')) $('#ck-go').onclick = () => { const me_ = Game.race.cars.find(c => c.isPlayer); if (Game.race.qualiRelease(me_)) me_.qTold = 1; };
   bindPTT($('#ck-ptt'), () => ({ interim: t => Radio.live(t, me), final: t => { Radio.liveEnd(); Brain.pilotSays(t); }, end: () => Radio.liveEnd() }));
   $$('.tbtn', el).forEach(b => {
@@ -5782,7 +5802,7 @@ function updateCockpit() {
   renderTower($('#ck-tower'), false);
   $('#ck-lap').textContent = quali ? (r.q.state === 'break' ? 'PAUSE' : r.q.done ? 'FIN' : `Q${r.q.part} ${r.q.t > 0 ? fmtClock(r.q.t) : ''}`) : `${Math.min(r.laps, Math.max(1, me.lapsDone + 1))}/${r.laps}`;
   $('#ck-pos').textContent = quali ? (me.qOut ? 'Éliminé' : me.qPhase === 'garage' ? 'Garage' : me.qPhase === 'out' ? 'Sortie' : me.qPhase === 'in' ? 'Retour' : fmtLap(r.t - me.lapStart) + (me.invalid ? ' ×' : '')) : 'P' + me.pos;
-  if (quali) { const go = $('#ck-go'), can = me.qPhase === 'garage' && !me.qOut && r.q.state === 'run' && r.q.t > 0; if (go.hidden === can) go.hidden = !can; go.classList.toggle('pulse', can && me.qTold > 0); }
+  if (quali) { const go = $('#ck-go'), can = me.qPhase === 'garage' && !me.qOut && r.q.state === 'run' && r.q.t > 0; if (go.hidden === can) go.hidden = !can; go.classList.toggle('pulse', can && me.qTold > 0); const nb = $('#ck-qnext'), br = r.q.state === 'break'; if (nb.hidden === br) nb.hidden = !br; if (br) $('span', nb).textContent = `Passer à la Q${r.q.part + 1}`; }
   $('#ck-last').textContent = fmtLap(me.lastLap); $('#ck-best').textContent = fmtLap(me.bestLap);
   const f = [1.04, 1.1, .96, 1.0];
   $('#ck-tyres').innerHTML = me.temps.map((t, q) => `<span><i style="--c:${tempCol(t)}"></i>${Math.round(100 - clamp(me.wear * f[q], 0, 100))}%</span>`).join('');
@@ -5970,6 +5990,7 @@ window.addEventListener('keydown', e => {
   if (!Game.race || !Game.raf) return;
   if (/^Arrow/.test(e.code)) e.preventDefault();
   if (Game.cine) { if (e.code === 'Escape' || e.code === 'Enter') Game.cine.end(); return; }
+  if (e.code === 'Enter' && Game.race && Game.race.q && Game.race.q.state === 'break') qNext();
   if (e.code === 'Escape') { $('#modal').classList.contains('on') ? $('#p-res')?.click() : pauseMenu(); }
   if (e.repeat) return;
   if (e.code === 'KeyV') { const b = Game.role === 'pilot' ? $('#ck-ptt') : $('#w-ptt'); if (b && !Mic.gate) b.dispatchEvent(new PointerEvent('pointerdown')); }
