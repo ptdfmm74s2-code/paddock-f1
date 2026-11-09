@@ -5277,7 +5277,7 @@ const DISTS = [
   { k: '5', n: '5 tours', f: () => 5 }, { k: '15', n: '15 %', f: L => Math.max(5, Math.round(L * .15)) }, { k: '25', n: '25 %', f: L => Math.max(6, Math.round(L * .25)) },
   { k: '50', n: '50 %', f: L => Math.round(L * .5) }, { k: '100', n: '100 %', f: L => L },
 ];
-const APP_VER = '9 nov. · flèches seules';
+const APP_VER = '9 nov. · flèches seules · màj auto';
 const QFMT = [{ k: 'court', n: 'Courtes', d: [360, 300, 240], h: 'Q1 6 min · Q2 5 min · Q3 4 min' }, { k: 'moyen', n: 'Moyennes', d: [600, 480, 360], h: 'Q1 10 min · Q2 8 min · Q3 6 min' }, { k: 'reel', n: 'Réelles', d: [1080, 900, 720], h: 'Q1 18 min · Q2 15 min · Q3 12 min (comme en vrai)' }];
 const fmtClock = t => { t = Math.max(0, Math.ceil(t)); return Math.floor(t / 60) + ':' + String(t % 60).padStart(2, '0'); };
 const AI_LV = [{ n: 'Facile', off: 5 }, { n: 'Normal', off: 2.2 }, { n: 'Difficile', off: .9 }, { n: 'Légende', off: 0 }];
@@ -6251,6 +6251,13 @@ function engineAudio(r, w, dt) {
   if (Game.prefs.quality >= 1) { CarGLB.init(); Kit.init(); SafetyGLB.init(); WheelGLB.init(); }
   document.addEventListener('pointerdown', () => Sfx.init(), { passive: true });
   renderHome();
+  // mise à jour automatique : si une version plus récente est en ligne, on la charge (l'iPad garde sinon l'ancienne en mémoire)
+  if (/^https?:$/.test(location.protocol) && !window.claude) {
+    fetch(location.pathname + '?nocache=' + Date.now(), { cache: 'no-store' }).then(r => r.ok ? r.text() : '').then(t => {
+      const m = t.match(/const APP_VER = '([^']*)'/);
+      if (m && m[1] !== APP_VER && !Game.raf) { try { if (sessionStorage.getItem('upd') === m[1]) return; sessionStorage.setItem('upd', m[1]); } catch (e) { } location.replace(location.pathname + '?v=' + Date.now()); }
+    }).catch(() => { });
+  }
 })();
 </script>
 </body>
