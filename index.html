@@ -376,9 +376,6 @@ table.std td.r, table.std th.r { text-align: right; }
 #ck-qnext { bottom: 180px; }
 .twrap { position: relative; }
 .twrap > .trow { position: absolute; left: 0; right: 0; top: 0; transition: transform .75s cubic-bezier(.4, 0, .2, 1); will-change: transform; }
-.twrap > .trow.gain, .twrap > .trow.lose { background-color: #0b0e13; }
-.twrap > .trow.gain { background-image: linear-gradient(90deg, rgba(43,214,123,.45), transparent 85%); }
-.twrap > .trow.lose { background-image: linear-gradient(90deg, rgba(255,42,31,.45), transparent 85%); }
 .ersfab { position: absolute; right: max(12px, env(safe-area-inset-right)); bottom: calc(max(12px, env(safe-area-inset-bottom)) + clamp(110px, 40vh, 280px) + 14px); width: clamp(76px, 13vw, 150px); display: flex; justify-content: center; gap: 10px; pointer-events: none; }
 .rbtn { pointer-events: auto; width: 62px; height: 62px; border-radius: 50%; border: 2px solid rgba(255,255,255,.35); background: rgba(16,20,27,.8); color: #2BD67B; font-weight: 900; font-size: 10px; letter-spacing: .04em; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; }
 .rbtn .ic { width: 20px; height: 20px; }
@@ -5280,7 +5277,7 @@ const DISTS = [
   { k: '5', n: '5 tours', f: () => 5 }, { k: '15', n: '15 %', f: L => Math.max(5, Math.round(L * .15)) }, { k: '25', n: '25 %', f: L => Math.max(6, Math.round(L * .25)) },
   { k: '50', n: '50 %', f: L => Math.round(L * .5) }, { k: '100', n: '100 %', f: L => L },
 ];
-const APP_VER = '9 nov. · sans bulle Copier';
+const APP_VER = '9 nov. · flèches seules';
 const QFMT = [{ k: 'court', n: 'Courtes', d: [360, 300, 240], h: 'Q1 6 min · Q2 5 min · Q3 4 min' }, { k: 'moyen', n: 'Moyennes', d: [600, 480, 360], h: 'Q1 10 min · Q2 8 min · Q3 6 min' }, { k: 'reel', n: 'Réelles', d: [1080, 900, 720], h: 'Q1 18 min · Q2 15 min · Q3 12 min (comme en vrai)' }];
 const fmtClock = t => { t = Math.max(0, Math.ceil(t)); return Math.floor(t / 60) + ':' + String(t % 60).padStart(2, '0'); };
 const AI_LV = [{ n: 'Facile', off: 5 }, { n: 'Normal', off: 2.2 }, { n: 'Difficile', off: .9 }, { n: 'Légende', off: 0 }];
