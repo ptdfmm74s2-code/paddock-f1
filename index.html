@@ -2914,11 +2914,31 @@ const Neural = {
       this.st = 'ready'; return true;
     } catch (e) { this.st = 'error'; this.err = 'téléchargement impossible (vérifie ta connexion Internet)'; console.warn(e); return false; }
   },
+  // Le calcul de la voix se fait dans un « worker » (fil séparé) : l'image du jeu ne se fige plus pendant que l'IA parle.
+  worker() {
+    if (this.w !== undefined) return this.w;
+    try {
+      const src = `let m = null;
+self.onmessage = async e => { const { id, text, voiceId } = e.data;
+  try { if (!m) m = await import('https://cdn.jsdelivr.net/npm/@diffusionstudio/vits-web@1.0.3/+esm');
+    const blob = await m.predict({ text, voiceId }); const buf = await blob.arrayBuffer(); self.postMessage({ id, buf }, [buf]);
+  } catch (err) { self.postMessage({ id, err: String(err && err.message || err) }); } };`;
+      const w = new Worker(URL.createObjectURL(new Blob([src], { type: 'text/javascript' })), { type: 'module' });
+      this.jobs = new Map(); this.seq = 0;
+      w.onmessage = e => { const j = this.jobs.get(e.data.id); if (!j) return; this.jobs.delete(e.data.id); e.data.err ? j.rej(new Error(e.data.err)) : j.res(e.data.buf); };
+      w.onerror = () => { this.w = null; for (const j of this.jobs.values()) j.rej(new Error('worker')); this.jobs.clear(); };
+      this.w = w;
+    } catch (e) { this.w = null; }
+    return this.w;
+  },
+  predict(text) {
+    const w = this.worker(); if (!w) return Promise.reject(new Error('worker'));
+    return new Promise((res, rej) => { const id = ++this.seq; this.jobs.set(id, { res, rej }); w.postMessage({ id, text, voiceId: this.id }); setTimeout(() => { if (this.jobs.delete(id)) rej(new Error('délai')); }, 20000); });
+  },
   async say(text, role, onEnd) {
-    const m = await this.lib();
-    const blob = await m.predict({ text, voiceId: this.id });
+    const ab = await this.predict(text);
     Sfx.init(); const ctx = Sfx.ctx; if (!ctx) throw new Error('audio');
-    const buf = await ctx.decodeAudioData(await blob.arrayBuffer());
+    const buf = await ctx.decodeAudioData(ab);
     const src = ctx.createBufferSource(); src.buffer = buf;
     // l'ingénieur un peu plus grave, le pilote un peu plus vif
     src.playbackRate.value = role === 'eng' ? .96 : 1.05;
@@ -2964,10 +2984,14 @@ const Speech = {
   },
   prime() { if (!this.ok) return; try { const u = new SpeechSynthesisUtterance(' '); u.volume = 0; speechSynthesis.speak(u); } catch (e) { } },
   say(text, role, seed, onEnd) {
+    // iPad : si le micro est resté ouvert sans qu'on parle, on le ferme avant que la voix démarre
+    // (sinon iOS bascule son mode audio pendant la phrase et l'image se fige)
+    if (Mic.isIOS && Mic.running && !Mic.gate) Mic.idleOff();
     if (Game.prefs.neural && Neural.st === 'ready') {
-      Neural.say(this.clean(text), role, onEnd).catch(() => { Neural.st = 'error'; this.say(text, role, seed, onEnd); });
+      Neural.say(this.clean(text), role, onEnd).catch(e => { console.warn('voix fluide', e); Neural.st = 'error'; Neural.err = 'calcul de la voix impossible sur cet appareil'; this.say(text, role, seed, onEnd); });
       return;
     }
+
     if (!this.ok) { onEnd && setTimeout(onEnd, 400 + text.length * 55); return; }
     const u = new SpeechSynthesisUtterance(this.clean(text));
     const h = [...(seed || 'x')].reduce((a, ch) => a + ch.charCodeAt(0), 0);
@@ -3041,6 +3065,7 @@ const Mic = {
     const h = this.h; this.h = null; Sfx.beep(true);
     if (h) { h.end && h.end(); if (t && t !== '…') h.final(t); }
   },
+  idleOff() { if (this.rec) { const r = this.rec; this.rec = null; this.running = false; this.results = null; this.base = 0; r.onend = null; try { r.abort(); } catch (e) { } } },
   shutdown() { this.keep = false; this.gate = false; this.on = false; clearTimeout(this.relT); if (this.rec) try { this.rec.abort(); } catch (e) { } this.rec = null; this.running = false; this.results = null; },
 };
 // Bouton radio : MAINTENIR appuyé pour parler, relâcher pour envoyer
