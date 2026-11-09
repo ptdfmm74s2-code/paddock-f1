@@ -373,6 +373,11 @@ table.std td.r, table.std th.r { text-align: right; }
 .trow .mv.up { color: #2BD67B; } .trow .mv.dn { color: #ff2a1f; }
 .trow .mv b { font-size: 9px; }
 #ck-qnext { bottom: 180px; }
+.twrap { position: relative; }
+.twrap > .trow { position: absolute; left: 0; right: 0; top: 0; transition: transform .75s cubic-bezier(.4, 0, .2, 1); will-change: transform; }
+.twrap > .trow.gain, .twrap > .trow.lose { background-color: #0b0e13; }
+.twrap > .trow.gain { background-image: linear-gradient(90deg, rgba(43,214,123,.45), transparent 85%); }
+.twrap > .trow.lose { background-image: linear-gradient(90deg, rgba(255,42,31,.45), transparent 85%); }
 </style>
 </head>
 <body>
@@ -5534,25 +5539,37 @@ function rebuildViews() {
 /* --------- tour de classement façon TV --------- */
 function renderTower(el, full) {
   const r = Game.race, L = r.T.L, lead = r.order[0];
-  let html = '';
+  // lignes persistantes : chaque pilote glisse vers sa nouvelle place ; la flèche (verte s'il monte,
+  // rouge s'il descend) reste affichée pendant le déplacement, puis disparaît une fois arrivé
+  const SLIDE = .75;
   const now = performance.now(), mv = el._mv || (el._mv = {}), first = !el._mvInit; el._mvInit = true;
+  const rows = el._rows || (el._rows = new Map());
+  if (!el._wrap || el._wrap.parentNode !== el) { el.innerHTML = ''; rows.clear(); el._wrap = document.createElement('div'); el._wrap.className = 'twrap'; el.appendChild(el._wrap); }
+  let h = el._h || 0;
   r.order.forEach((c, i) => {
     let g;
-    // flèche verte (gagne des places) ou rouge (en perd) pendant quelques secondes
     const s = mv[c.code] || (mv[c.code] = { p: i + 1, d: 0, n: 0, t: -1e9 });
-    if (s.p !== i + 1) { if (!first) { const n = s.p - (i + 1); s.n = s.d && Math.sign(n) === s.d && now - s.t < 3500 ? s.n + n : n; s.d = Math.sign(n); s.t = now; } s.p = i + 1; }
-    const age = (now - s.t) / 1000, act = s.d !== 0 && age < 4;
-    const mvHTML = act ? `<span class="mv ${s.d > 0 ? 'up' : 'dn'}" style="opacity:${clamp((4 - age) / 1, 0, 1).toFixed(2)};transform:scale(${(1 + .5 * Math.max(0, 1 - age / .35)).toFixed(2)})">${ic(s.d > 0 ? 'up' : 'down')}${Math.abs(s.n) > 1 ? '<b>' + Math.abs(s.n) + '</b>' : ''}</span>` : '<span class="mv"></span>';
-    const flash = act ? ` style="--c:${c.team.color};background-image:linear-gradient(90deg, ${s.d > 0 ? 'rgba(43,214,123,' : 'rgba(255,42,31,'}${(.45 * clamp(1 - age / 4, 0, 1)).toFixed(3)}), transparent 85%)"` : ` style="--c:${c.team.color}"`;
+    if (s.p !== i + 1) { if (!first) { const n = s.p - (i + 1); s.n = s.d && Math.sign(n) === s.d && (now - s.t) / 1000 < SLIDE ? s.n + n : n; s.d = Math.sign(n); s.t = now; } s.p = i + 1; }
+    const age = (now - s.t) / 1000, act = s.d !== 0 && age < SLIDE + .05;
+    const mvHTML = act ? `<span class="mv ${s.d > 0 ? 'up' : 'dn'}" style="transform:scale(${(1 + .45 * Math.max(0, 1 - age / .3)).toFixed(2)})">${ic(s.d > 0 ? 'up' : 'down')}${Math.abs(s.n) > 1 ? '<b>' + Math.abs(s.n) + '</b>' : ''}</span>` : '<span class="mv"></span>';
     if (r.q) { const p = c.qOut || r.q.part, t = c.qT[p - 1], t0 = r.order[0].qT[r.q.part - 1]; g = !isFinite(t) ? (c.qOut ? '—' : c.qPhase === 'garage' ? 'GARAGE' : c.qPhase === 'out' ? 'SORTIE' : c.qPhase === 'push' ? 'TOUR' : 'RETOUR') : c.qOut || i === 0 || !isFinite(t0) ? fmtLap(t) : fmtGap(t - t0); }
     else if (c.dnf) g = 'OUT';
     else if (c.pit) g = 'STAND';
     else if (i === 0) g = c.fin ? ic('chq') : 'Tour ' + Math.min(r.laps, Math.max(1, c.lapsDone + 1));
     else { const lapsDown = Math.floor((lead.dist - c.dist) / L); g = lapsDown >= 1 && !c.fin ? '+' + lapsDown + ' T' : fmtGap(Math.max(0, c.gap)); if (c.fin) g = (lapsDown >= 1 ? '+' + lapsDown + ' T' : g) + ' ' + ic('chq'); }
-    const cls = (c.team === Game.team ? ' mine' : '') + (c.pit && !r.q ? ' pit' : '') + (c.dnf || c.qOut ? ' out' : '') + (r.fastest.c === c ? ' fl' : '') + (r.q && !c.qOut && r.q.part < 3 && i === r.q.cut[r.q.part - 1] ? ' cut' : '') + (r.q && c.qPhase === 'push' ? ' push' : '');
-    html += `<div class="trow${cls}" data-code="${c.code}"${flash}><span class="p">${i + 1}</span>${mvHTML}<span class="tbar"></span><span>${c.code}</span>${full ? `<span class="nm">${esc(c.drv.last)}${r.q ? (c.qOut ? ' · éliminé Q' + c.qOut : c.qPhase === 'push' ? ' · tour lancé' : c.qPhase === 'out' ? ' · tour de sortie' : c.qPhase === 'in' ? ' · retour au stand' : ' · au garage') : c.pitReq && !c.pit ? ' · BOX' : ''}${c.mode !== 'normal' && c.team === Game.team ? ' · ' + ({ push: 'ATT', save: 'ÉCO', defend: 'DÉF' })[c.mode] : ''}</span>` : '<span></span>'}<span class="g num">${g}</span>${tyreHTML(c.comp)}</div>`;
+    const cls = (c.team === Game.team ? ' mine' : '') + (c.pit && !r.q ? ' pit' : '') + (c.dnf || c.qOut ? ' out' : '') + (r.fastest.c === c ? ' fl' : '') + (r.q && !c.qOut && r.q.part < 3 && i === r.q.cut[r.q.part - 1] ? ' cut' : '') + (r.q && c.qPhase === 'push' ? ' push' : '') + (act ? (s.d > 0 ? ' gain' : ' lose') : '');
+    const inner = `<span class="p">${i + 1}</span>${mvHTML}<span class="tbar"></span><span>${c.code}</span>${full ? `<span class="nm">${esc(c.drv.last)}${r.q ? (c.qOut ? ' · éliminé Q' + c.qOut : c.qPhase === 'push' ? ' · tour lancé' : c.qPhase === 'out' ? ' · tour de sortie' : c.qPhase === 'in' ? ' · retour au stand' : ' · au garage') : c.pitReq && !c.pit ? ' · BOX' : ''}${c.mode !== 'normal' && c.team === Game.team ? ' · ' + ({ push: 'ATT', save: 'ÉCO', defend: 'DÉF' })[c.mode] : ''}</span>` : '<span></span>'}<span class="g num">${g}</span>${tyreHTML(c.comp)}`;
+    let row = rows.get(c.code), fresh = false;
+    if (!row) { row = document.createElement('div'); row.dataset.code = c.code; row.style.setProperty('--c', c.team.color); row.style.transition = 'none'; el._wrap.appendChild(row); rows.set(c.code, row); fresh = true; }
+    else if (row.style.transition === 'none') row.style.transition = '';
+    if (row._cls !== cls) { row._cls = cls; row.className = 'trow' + cls; }
+    if (row._in !== inner) { row._in = inner; row.innerHTML = inner; }
+    if (!h && row.offsetHeight) { h = el._h = row.offsetHeight; }
+    const y = i * (h || 22);
+    if (row._y !== y) { row._y = y; row.style.transform = `translateY(${y}px)`; }
+    const z = act ? (s.d > 0 ? '3' : '2') : '1'; if (row.style.zIndex !== z) row.style.zIndex = z;
   });
-  el.innerHTML = html;
+  const H = r.order.length * (h || 22) + 'px'; if (el._wrap.style.height !== H) el._wrap.style.height = H;
   if (!el._bound) { el._bound = true; el.addEventListener('click', e => { const row = e.target.closest('.trow'); if (!row || !Game.world) return; const c = Game.race.cars.find(x => x.code === row.dataset.code); Game.world.focus(c, 25); toast('Caméra TV sur ' + c.drv.name); }); }
 }
 
