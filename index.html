@@ -5277,6 +5277,7 @@ const DISTS = [
   { k: '5', n: '5 tours', f: () => 5 }, { k: '15', n: '15 %', f: L => Math.max(5, Math.round(L * .15)) }, { k: '25', n: '25 %', f: L => Math.max(6, Math.round(L * .25)) },
   { k: '50', n: '50 %', f: L => Math.round(L * .5) }, { k: '100', n: '100 %', f: L => L },
 ];
+const APP_VER = '9 nov. · roues droites';
 const QFMT = [{ k: 'court', n: 'Courtes', d: [360, 300, 240], h: 'Q1 6 min · Q2 5 min · Q3 4 min' }, { k: 'moyen', n: 'Moyennes', d: [600, 480, 360], h: 'Q1 10 min · Q2 8 min · Q3 6 min' }, { k: 'reel', n: 'Réelles', d: [1080, 900, 720], h: 'Q1 18 min · Q2 15 min · Q3 12 min (comme en vrai)' }];
 const fmtClock = t => { t = Math.max(0, Math.ceil(t)); return Math.floor(t / 60) + ':' + String(t % 60).padStart(2, '0'); };
 const AI_LV = [{ n: 'Facile', off: 5 }, { n: 'Normal', off: 2.2 }, { n: 'Difficile', off: .9 }, { n: 'Légende', off: 0 }];
@@ -6024,7 +6025,7 @@ function settingsModal(onClose) {
   const draw = () => {
     const vs = Speech.sorted();
     const opts = sel => `<option value="">Automatique (meilleure voix)</option>` + vs.map(v => `<option value="${esc(v.name)}" ${v.name === sel ? 'selected' : ''}>${Speech.rank(v) >= 20 ? '★ ' : ''}${esc(v.name)}</option>`).join('');
-    $('#modal-card').innerHTML = `<h3 style="font-size:22px;font-weight:900;font-style:italic;margin-bottom:12px">Réglages</h3>
+    $('#modal-card').innerHTML = `<h3 style="font-size:22px;font-weight:900;font-style:italic;margin-bottom:12px">Réglages <small class="muted" style="font-size:12px;font-style:normal;font-weight:600">version ${APP_VER}</small></h3>
       <div class="opts">
         <div class="opt"><label>Voix fluide (neuronale)</label><div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">${!Neural.avail() ? (Neural.ios() ? '<span class="muted" style="font-size:13px">Désactivée sur iPad : elle prenait trop de mémoire avec la 3D et faisait planter le jeu.</span>' : '<span class="muted" style="font-size:13px">Disponible dans l\'appli installée (site), pas sur claude.ai.</span>') : Neural.st === 'ready' ? `<div class="seg" id="st-nn"><button data-v="1" class="${p.neural ? 'on' : ''}">Activée</button><button data-v="0" class="${!p.neural ? 'on' : ''}">Désactivée</button></div><button class="btn small" id="st-nt">${ic('play')}</button>` : Neural.st === 'loading' ? `<span class="muted" id="st-np">Téléchargement… ${Math.round(Neural.prog * 100)} %</span>` : `<button class="btn small team" id="st-nd">Télécharger (≈ 65 Mo)</button>`}</div></div>
         ${Neural.avail() ? `<p class="muted" style="font-size:13px;margin:0">Une vraie voix de synthèse neuronale, calculée sur l'iPad : beaucoup plus naturelle et fluide, avec un effet radio. Téléchargement unique (Wi-Fi conseillé), puis elle marche sans Internet.${Neural.st === 'error' ? ' <b style="color:var(--warn)">Échec : ' + esc(Neural.err) + '. Réessaie.</b>' : ''}</p>` : ''}
