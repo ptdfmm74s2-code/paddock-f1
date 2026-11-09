@@ -1465,8 +1465,8 @@ class World {
     const MS = this.trackModel = !(typeof Game !== 'undefined' && Game.prefs && Game.prefs.trackStyle === 'real');
     this.roadBase = 1;
     const asph = MS ? canvasTex(256, 256, (g, W, H) => {
-      g.fillStyle = '#7b7d81'; g.fillRect(0, 0, W, H);
-      for (let k = 0; k < 9000; k++) { const v = 105 + Math.random() * 40 | 0; g.fillStyle = `rgba(${v},${v},${v + 3},.35)`; g.fillRect(Math.random() * W, Math.random() * H, 1.5, 1.5); }
+      g.fillStyle = '#56585c'; g.fillRect(0, 0, W, H);
+      for (let k = 0; k < 9000; k++) { const v = 70 + Math.random() * 36 | 0; g.fillStyle = `rgba(${v},${v},${v + 3},.35)`; g.fillRect(Math.random() * W, Math.random() * H, 1.5, 1.5); }
     }) : TEX.asphalt.clone();
     if (MS) { asph.wrapS = asph.wrapT = THREE.RepeatWrapping; }
     asph.needsUpdate = true; asph.repeat.set(T.w / 8, 1);
@@ -1851,6 +1851,13 @@ class World {
     this.spray.geometry.attributes.position.needsUpdate = true;
     this.spray.material.opacity = .15 + w * .3;
   }
+  // hauteur d'un vibreur (au-dessus de la route) à une distance latérale donnée du centre de la piste
+  kerbH(lat) {
+    const a = Math.abs(lat), hw = this.Tf.hw;
+    if (this.trackModel) { const t = (a - (hw - .1)) / 1.55; return t <= 0 || t >= 1 ? 0 : .005 + .17 * Math.pow(Math.sin(Math.PI * t), .7); }
+    if (a < hw - .05 || a > hw + 1.35) return 0;
+    return a < hw + .7 ? .01 + .07 * (a - hw + .05) / .75 : .08 - .06 * (a - hw - .7) / .65;
+  }
   setWeather(w, rain) {
     this.updateSky(w, rain);
     this.roadMat.roughness = lerp(.88, .22, clamp(w * 1.4, 0, 1));
@@ -1863,6 +1870,19 @@ class World {
     const blink = Math.floor(this.time * 4) % 2 === 0;
     for (const [c, m] of this.cars) {
       m.g.position.set(c.x, c.y, c.z); m.g.rotation.y = c.h;
+      // sur un vibreur : la voiture monte, penche du côté du vibreur et vibre
+      let lift = 0, roll = 0;
+      const Tf = this.Tf, fi = ((c.ti || 0) * 2) % Tf.N;
+      if (Tf && !c.pit && Math.abs(c.d || 0) > Tf.hw - .95 && Math.abs(Tf.k40[fi]) > 1 / 230) {
+        const hP = this.kerbH(c.d + .75), hN = this.kerbH(c.d - .75);
+        if (hP > 0 || hN > 0) {
+          const sx = Math.sign(Math.cos(c.h) * Tf.nx[fi] - Math.sin(c.h) * Tf.nz[fi]) || 1, vib = Math.min(1, c.v / 25);
+          lift = (hP + hN) / 2 + .014 * vib * Math.sin(this.time * 95 + (c.gp || 0));
+          roll = sx * Math.atan2(hP - hN, 1.5) + .006 * vib * Math.sin(this.time * 71);
+        }
+      }
+      m.lift = lerp(m.lift || 0, lift, Math.min(1, dt * 30)); m.roll = lerp(m.roll || 0, roll, Math.min(1, dt * 30));
+      m.g.position.y += m.lift; m.g.rotation.z = m.roll;
       if (m.comp !== c.comp) { m.comp = c.comp; if (m.hq) { m.ringMat.map = sidewallTex(c.comp); m.ringMat.map.encoding = THREE.sRGBEncoding; m.ringMat.needsUpdate = true; } else m.ringMat.color.set(COMP[c.comp].c).convertSRGBToLinear(); }
       // roues qui tournent et braquent
       m.spin = (m.spin + c.v * dt / .37) % (Math.PI * 2);
