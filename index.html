@@ -20,6 +20,7 @@
   Tracés des circuits : bacinger/f1-circuits (licence MIT, © Tomislav Bacinger).
   Voiture 3D : « 2026 Redbull RB22 » par Dave Love (sketchfab.com), licence CC BY 4.0 — modifiée (allégée, roues remplacées, livrées recolorées).
   Style des vibreurs et de la route : « Piste de Course » par gamehubgamehubsenegal (sketchfab.com), licence CC BY 4.0.
+  Décor : « Cartoon Race Track - Oval » par RCC Design (sketchfab.com), licence CC BY 4.0 — objets allégés et replacés.
   Jeu de fan non officiel : aucun lien avec la Formula 1, la FIA ou les écuries.
 -->
 <style>
@@ -1399,6 +1400,7 @@ function refineTrack(T, k) {
 class World {
   constructor(race, Q = 2) {
     this.race = race; this.Q = Q; const T = this.T = race.T;
+    this.kit = Q >= 1 && Kit.st === 'ready' && !(typeof Game !== 'undefined' && Game.prefs && Game.prefs.decor === 'classic');
     const R = getRenderer(); textures();
     const night = T.info.night, street = T.info.street;
     const s = this.scene = new THREE.Scene();
@@ -1417,7 +1419,7 @@ class World {
     R.setPixelRatio(Math.min(window.devicePixelRatio || 1, Q >= 3 ? 2 : 1.6)); R.setSize(window.innerWidth, window.innerHeight, false);
     if (Q >= 2) { this.sun.castShadow = true; const sc = this.sun.shadow.camera; const ext = Q >= 3 ? 90 : 110; sc.left = sc.bottom = -ext; sc.right = sc.top = ext; sc.near = 10; sc.far = 1000; this.sun.shadow.mapSize.set(Q >= 3 ? 4096 : 2048, Q >= 3 ? 4096 : 2048); this.sun.shadow.bias = -.0004; this.sun.shadow.normalBias = .02; }
     this.envRain = -1; this.updateSky(0, 0, true);
-    this.buildTrack(); this.buildScenery();
+    this.buildTrack(); this.buildScenery(); if (this.kit) this.buildKitExtras();
     this.cars = new Map();
     for (const c of race.cars) { const m = makeCarMesh(c, Q); this.cars.set(c, m); s.add(m.g); }
     this.buildBoards();
@@ -1545,13 +1547,45 @@ class World {
       const W = i => { const base = sd > 0 ? T.wallP[i] : T.wallN[i]; return sd === T.pitSide ? Math.max(base, pitWallOff(i)) : base; };
       const atPit = i => sd === T.pitSide && pitWallOff(i) > 0;
       s.add(recv(new THREE.Mesh(strips(T, i => atPit(i) ? null : ({ wall: 1, a: sd * W(i), b: sd * W((i + 1) % T.N), y0: 0, y1: wallH, uLen: 96 }), true), sd > 0 ? adMatM : adMat)));
-      s.add(new THREE.Mesh(strips(T, i => atPit(i) ? null : ({ a: sd * W(i), b: sd * (W(i) + .4), y0: wallH, color: info.street ? '#bfc3c8' : '#9aa3ab' })), conc));
-      if (info.street || Q >= 1) s.add(new THREE.Mesh(strips(T, i => atPit(i) ? null : ({ wall: 1, a: sd * (W(i) + .2), b: sd * (W((i + 1) % T.N) + .2), y0: wallH, y1: wallH + (info.street ? 3 : 2.2), uLen: 2.5 }), true), fence));
+      if (this.kit) {
+        // murs du kit : bloc béton + grillage, posés tous les ~5 m le long du mur
+        const list = [], step = 2;
+        for (let i = 0; i < T.N; i += step) {
+          const j = (i + step) % T.N; if (atPit(i) || atPit(j)) continue;
+          const ax = T.px[i] + T.nx[i] * sd * W(i), az = T.pz[i] + T.nz[i] * sd * W(i), bx = T.px[j] + T.nx[j] * sd * W(j), bz = T.pz[j] + T.nz[j] * sd * W(j);
+          const len = Math.hypot(bx - ax, bz - az); if (len < .5 || len > 20) continue;
+          const nx = (T.nx[i] + T.nx[j]) / 2 * sd, nz = (T.nz[i] + T.nz[j]) / 2 * sd;
+          list.push(Kit.mat((ax + bx) / 2 + nx * .9, (T.py[i] + T.py[j]) / 2, (az + bz) / 2 + nz * .9, nx, nz, len / 4 * 1.02, 1, 1));
+        }
+        Kit.place(s, 'wall_end', list, { recv: Q >= 2, cell: 120, far: Q >= 3 ? 650 : 380 });
+      } else {
+        s.add(new THREE.Mesh(strips(T, i => atPit(i) ? null : ({ a: sd * W(i), b: sd * (W(i) + .4), y0: wallH, color: info.street ? '#bfc3c8' : '#9aa3ab' })), conc));
+        if (info.street || Q >= 1) s.add(new THREE.Mesh(strips(T, i => atPit(i) ? null : ({ wall: 1, a: sd * (W(i) + .2), b: sd * (W((i + 1) % T.N) + .2), y0: wallH, y1: wallH + (info.street ? 3 : 2.2), uLen: 2.5 }), true), fence));
+      }
     }
     // muret des stands
-    s.add(new THREE.Mesh(strips(T, i => { const u = uOf(i); return u > 70 && u < T.pitLen - 70 ? { wall: 1, a: T.pitSide * (hw + 3.8), b: T.pitSide * (hw + 3.8), y0: 0, y1: 1.2, color: '#d6d6d6' } : null; }), conc));
+    if (this.kit) {
+      // muret des stands du kit : abri, comptoir et tabourets des ingénieurs (côté voie des stands)
+      const list = [], ps = T.pitSide, off = hw + 3.8 + .75;
+      for (let i = 0; i < T.N; i += 2) {
+        const u = uOf(i), j = (i + 2) % T.N; if (!(u > 70 && u < T.pitLen - 70) || !(uOf(j) > 70 && uOf(j) < T.pitLen - 70)) continue;
+        const ax = T.px[i] + T.nx[i] * ps * off, az = T.pz[i] + T.nz[i] * ps * off, bx = T.px[j] + T.nx[j] * ps * off, bz = T.pz[j] + T.nz[j] * ps * off;
+        list.push(Kit.mat((ax + bx) / 2, T.py[i], (az + bz) / 2, T.nx[i] * ps, T.nz[i] * ps, Math.hypot(bx - ax, bz - az) / 4 * 1.01, 1, 1));
+      }
+      Kit.place(s, 'pitwall', list, { recv: Q >= 2, cell: 80, far: 350 });
+    } else s.add(new THREE.Mesh(strips(T, i => { const u = uOf(i); return u > 70 && u < T.pitLen - 70 ? { wall: 1, a: T.pitSide * (hw + 3.8), b: T.pitSide * (hw + 3.8), y0: 0, y1: 1.2, color: '#d6d6d6' } : null; }), conc));
     // piles de pneus à l'extérieur des virages serrés
-    if (Q >= 1 && !info.street) {
+    if (this.kit && !info.street) {
+      // piles de pneus du kit contre le mur extérieur des virages serrés
+      const list = [];
+      for (let i = 0; i < T.N; i += 2) {
+        if (Math.abs(T.k40[i]) < 1 / 110) continue; const sd = -Math.sign(T.k40[i]), W = (sd > 0 ? T.wallP[i] : T.wallN[i]) - 1.45;
+        const j = (i + 2) % T.N, W2 = (sd > 0 ? T.wallP[j] : T.wallN[j]) - 1.45;
+        const ax = T.px[i] + T.nx[i] * sd * W, az = T.pz[i] + T.nz[i] * sd * W, bx = T.px[j] + T.nx[j] * sd * W2, bz = T.pz[j] + T.nz[j] * sd * W2;
+        list.push(Kit.mat((ax + bx) / 2, T.py[i], (az + bz) / 2, T.nx[i] * sd, T.nz[i] * sd, Math.hypot(bx - ax, bz - az) / 4.2 * 1.03, 1, 1));
+      }
+      Kit.place(s, 'tyre_block', list, { shadow: false, cell: 80, far: Q >= 3 ? 450 : 280 });
+    } else if (Q >= 1 && !info.street) {
       const spots = [];
       for (let i = 0; i < T.N; i += 1) { if (Math.abs(T.k40[i]) < 1 / 110) continue; const sd = -Math.sign(T.k40[i]), W = sd > 0 ? T.wallP[i] : T.wallN[i]; for (let k = 0; k < 5; k++) spots.push([i, sd, W - .45, k]); }
       const tm = new THREE.InstancedMesh(new THREE.CylinderGeometry(.33, .33, 1.0, 10), new THREE.MeshStandardMaterial({ roughness: .9, color: 0xffffff }), spots.length);
@@ -1583,6 +1617,7 @@ class World {
     // passerelles publicitaires au-dessus de la piste
     if (Q >= 1) for (const f of [.27, .55, .8]) {
       const q = trackPoint(T, f * L, 0, {}); if (Math.abs(T.k40[q.i]) > 1 / 300) continue;
+      if (this.kit && this.kitBridge(T, q)) continue;
       const g = new THREE.Group(); g.position.set(q.x, q.y, q.z); g.rotation.y = q.h;
       const ww = Math.min(T.wallP[q.i] + T.wallN[q.i], 60);
       const b = new THREE.Mesh(new THREE.BoxGeometry(ww, 2, 1.2), mat('#e9ecef')); b.position.set((T.wallN[q.i] - T.wallP[q.i]) / 2 * 0, 8, 0); g.add(b);
@@ -1613,6 +1648,7 @@ class World {
     this.addStand(0, -T.pitSide, 150);
   }
   addStand(sAt, side, len) {
+    if (this.kit) return this.addKitStand(sAt, side, len);
     const T = this.T, Q = this.Q, q = trackPoint(T, sAt, 0, {});
     const off = (side > 0 ? T.wallP[q.i] : T.wallN[q.i]) + 7;
     const p = trackPoint(T, sAt, side * off, {});
@@ -1641,6 +1677,112 @@ class World {
     }
     g.add(crowd);
     this.scene.add(g);
+  }
+  // ---------- décor du kit importé (RCC Design, CC BY 4.0) ----------
+  kitBridge(T, q) {
+    if (!Kit.has('overpass_mid')) return false;
+    const s = this.scene, i = q.i, nx = T.nx[i], nz = T.nz[i], tx = T.tx[i], tz = T.tz[i];
+    const a0 = -T.wallN[i] - 2, a1 = T.wallP[i] + 2, span = a1 - a0; if (span > 70) return false;
+    const P = Kit.protos.overpass_mid, dy = 5.6 - P.bb.min.y, cnt = Math.ceil(span / 6), sc = span / (cnt * 6);
+    const mids = [];
+    for (let k = 0; k < cnt; k++) { const a = a0 + (k + .5) * 6 * sc; mids.push(Kit.mat(q.x + nx * a, q.y + dy, q.z + nz * a, nx, nz, 1, 1, sc)); }
+    Kit.place(s, 'overpass_mid', mids, { shadow: this.Q >= 2 });
+    const st = [], SP = Kit.protos.overpass_stairs, half = (SP.bb.max.z - SP.bb.min.z) / 2;
+    for (const [a, d] of [[a1 + half, 1], [a0 - half, -1]]) st.push(Kit.mat(q.x + nx * a, q.y, q.z + nz * a, nx * d, nz * d));
+    Kit.place(s, 'overpass_stairs', st, { shadow: this.Q >= 2 });
+    // bandeaux publicitaires sur les deux faces de la passerelle
+    for (const d of [1, -1]) {
+      const ad = new THREE.Mesh(new THREE.PlaneGeometry(span, 1.3), new THREE.MeshBasicMaterial({ map: TEX.ads, side: THREE.DoubleSide }));
+      const mid = (a0 + a1) / 2; ad.position.set(q.x + nx * mid + tx * d * 1.06, q.y + dy + P.bb.min.y + 1.5, q.z + nz * mid + tz * d * 1.06);
+      ad.rotation.y = Math.atan2(tx, tz) + (d > 0 ? 0 : Math.PI); s.add(ad);
+    }
+    return true;
+  }
+  addKitStand(sAt, side, len) {
+    const T = this.T, cnt = Math.max(2, Math.round(len / 16));
+    this._stands = this._stands || []; this._crowd = this._crowd || [];
+    const L = new THREE.Matrix4(), M = new THREE.Matrix4();
+    for (let k = 0; k < cnt; k++) {
+      const sk = sAt + (k - (cnt - 1) / 2) * 16.1, q = trackPoint(T, sk, 0, {}), W = side > 0 ? T.wallP[q.i] : T.wallN[q.i];
+      const p = trackPoint(T, sk, side * (W + 10), {}), nx = T.nx[q.i] * side, nz = T.nz[q.i] * side;
+      // pas de gradin posé sur une autre portion de piste (épingles, circuits urbains)
+      let near = 1e9; for (let i = 0; i < T.N; i += 3) { const d = Math.hypot(T.px[i] - p.x, T.pz[i] - p.z); if (d < near) near = d; }
+      if (near < T.hw + 9) continue;
+      Kit.mat(p.x, p.y, p.z, nx, nz, 1, 1, 1, M); this._stands.push(M.clone());
+      // spectateurs sur les gradins (8 rangées)
+      for (let r = 0; r < 8; r++) for (let c = 0; c < 13; c++) {
+        if (Math.random() < .22) continue;
+        L.makeTranslation(-7.2 + c * 1.2 + (Math.random() - .5) * .3, 1.45 + r * .93, -6.4 + r * 1.55); this._crowd.push(M.clone().multiply(L));
+      }
+    }
+  }
+  kitTrees(cx, cz, size, clearance) {
+    const T = this.T, Q = this.Q, info = T.info, s = this.scene;
+    const total = info.street ? 90 : Q >= 3 ? 600 : Q >= 2 ? 340 : 200;
+    const kinds = [['tree_pine', .34], ['tree_e', .3], ['tree_round', .2], ['tree_round2', .16]].filter(([k]) => Kit.has(k));
+    const lists = kinds.map(() => []);
+    let n = 0;
+    for (let tries = 0; tries < 20000 && n < total; tries++) {
+      const x = cx + (Math.random() - .5) * size * .7, z = cz + (Math.random() - .5) * size * .7, d = clearance(x, z);
+      if (d < 26 || d > (info.street ? 70 : 280)) continue;
+      const ki = (() => { let r = Math.random(), acc = 0; for (let k = 0; k < kinds.length; k++) { acc += kinds[k][1]; if (r < acc) return k; } return 0; })();
+      const grp = 1 + Math.floor(Math.random() * 4);
+      for (let b = 0; b < grp && n < total; b++) {
+        const x2 = x + (b ? (Math.random() - .5) * 16 : 0), z2 = z + (b ? (Math.random() - .5) * 16 : 0); if (b && clearance(x2, z2) < 26) continue;
+        const sc = .75 + Math.random() * .55, a = Math.random() * 6.28;
+        lists[ki].push(Kit.mat(x2, 0, z2, Math.sin(a), Math.cos(a), sc, sc * (.9 + Math.random() * .25), sc)); n++;
+      }
+    }
+    kinds.forEach(([k], i) => Kit.place(s, k, lists[i], { shadow: Q >= 3, cell: 120, maxScale: 1.4, far: Q >= 3 ? 650 : 400 }));
+  }
+  buildKitExtras() {
+    const T = this.T, s = this.scene, Q = this.Q, L = T.L, info = T.info;
+    const Wd = (i, sd) => sd > 0 ? T.wallP[i] : T.wallN[i];
+    // gradins + public
+    if (this._stands) Kit.place(s, 'stand_large', this._stands, { shadow: Q >= 3, cell: 70, far: Q >= 3 ? 800 : 480 });
+    if (this._crowd && this._crowd.length) {
+      const person = mergeParts([[new THREE.BoxGeometry(.45, .6, .32), 0, .3, 0], [new THREE.SphereGeometry(.14, 8, 6), 0, .74, 0, 0, 0, 0, 1, 1, 1]]);
+      const crowdMat = new THREE.MeshLambertMaterial({ color: 0xffffff });
+      if (Q >= 2 && getRenderer().capabilities.isWebGL2) crowdMat.onBeforeCompile = sh => { sh.uniforms.uT = World.crowdT; sh.vertexShader = 'uniform float uT;\n' + sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\nfloat ph = float(gl_InstanceID);\ntransformed.y += step(.6, fract(ph * .618)) * max(0.0, sin(uT * 7.0 + ph * 1.3)) * .22;'); };
+      const cr = new THREE.InstancedMesh(person, crowdMat, this._crowd.length), C = new THREE.Color();
+      this._crowd.forEach((M, k) => { cr.setMatrixAt(k, M); cr.setColorAt(k, C.setHSL(Math.random(), .55 + Math.random() * .3, .35 + Math.random() * .35)); });
+      cr.frustumCulled = false; s.add(cr);
+    }
+    // lampadaires le long des lignes droites
+    const lamps = [];
+    for (let i = 0, k = 0; i < T.N; i += Math.round(55 / T.ds), k++) {
+      if (Math.abs(T.k40[i]) > 1 / 350) continue; const sd = k % 2 ? 1 : -1, off = Wd(i, sd) + 1.6;
+      const tx = T.tx[i] * sd, tz = T.tz[i] * sd;
+      lamps.push(Kit.mat(T.px[i] + T.nx[i] * sd * off, T.py[i], T.pz[i] + T.nz[i] * sd * off, tx, tz));
+    }
+    Kit.place(s, 'lamp', lamps, { shadow: false, cell: 150, far: 600 });
+    // grands panneaux publicitaires sur pied derrière les murs
+    const boards = [];
+    for (let q = 0; q < 12; q++) { const i = Math.floor((q + .37) * T.N / 12), sd = q % 2 ? 1 : -1, off = Wd(i, sd) + 9; boards.push(Kit.mat(T.px[i] + T.nx[i] * sd * off, T.py[i], T.pz[i] + T.nz[i] * sd * off, T.nx[i] * sd, T.nz[i] * sd)); }
+    Kit.place(s, 'big_banner', boards, {});
+    // caissons publicitaires sur les dégagements des gros virages
+    const boxes = { adbox_a: [], adbox_b: [], adbox_c: [] }, bk = Object.keys(boxes);
+    for (let i = 0, c = 0; i < T.N; i += 6) { if (Math.abs(T.k40[i]) < 1 / 120) continue; const sd = -Math.sign(T.k40[i]), off = Wd(i, sd) - 4; if (off < T.hw + 4) continue; boxes[bk[c++ % 3]].push(Kit.mat(T.px[i] + T.nx[i] * sd * off, T.py[i], T.pz[i] + T.nz[i] * sd * off, T.nx[i] * sd, T.nz[i] * sd, 1.6, 1.6, 1.6)); }
+    for (const k of bk) Kit.place(s, k, boxes[k], {});
+    // cônes à l'entrée des stands
+    const cones = [];
+    for (let u = -36; u <= 0; u += 4) { const q = trackPoint(T, L - T.pitIn + u, T.pitSide * (T.hw + 1.4 + (u + 36) / 36 * 2), {}); cones.push(Kit.mat(q.x, q.y, q.z, 0, 1)); }
+    Kit.place(s, 'cone', cones, {});
+    // tentes du paddock et tour de contrôle derrière le bâtiment des stands
+    const tents = [];
+    for (let k = 0; k < 4; k++) { const u = T.pitLen / 2 - 20 + (k - 1.5) * 40, q = trackPoint(T, L - T.pitIn + u, T.pitSide * (T.pitOff + 42), {}), i = q.i; tents.push(Kit.mat(q.x, q.y, q.z, T.nx[i] * T.pitSide, T.nz[i] * T.pitSide)); }
+    Kit.place(s, 'tent', tents, { shadow: Q >= 2 });
+    { const q = trackPoint(T, L - T.pitIn + T.pitLen / 2 + 118, T.pitSide * (T.pitOff + 19), {}), i = q.i; Kit.place(s, 'tower', [Kit.mat(q.x, q.y, q.z, T.nx[i] * T.pitSide, T.nz[i] * T.pitSide, 1.2, 1.2, 1.2)], { shadow: Q >= 2 }); }
+    // montgolfières qui dérivent lentement dans le ciel
+    if (!info.night && !info.street) {
+      const names = ['balloon_a', 'balloon_b', 'balloon_c', 'balloon_d'].filter(k => Kit.has(k)), cx = (T.minX + T.maxX) / 2, cz = (T.minZ + T.maxZ) / 2, R = Math.max(T.maxX - T.minX, T.maxZ - T.minZ) * .6 + 200;
+      this.balloons = [];
+      for (let k = 0; k < 7 && names.length; k++) {
+        const g = new THREE.Group(); for (const p of Kit.protos[names[k % names.length]].parts) g.add(new THREE.Mesh(p.geo, p.mat));
+        const a = Math.random() * 6.28, r = R * (.4 + Math.random() * .6), b = { g, x: cx + Math.cos(a) * r, z: cz + Math.sin(a) * r, y: 70 + Math.random() * 110, ph: Math.random() * 6.28, sp: .4 + Math.random() * .6 };
+        g.position.set(b.x, b.y, b.z); g.scale.setScalar(1.3); s.add(g); this.balloons.push(b);
+      }
+    }
   }
   buildScenery() {
     const T = this.T, s = this.scene, info = T.info, Q = this.Q;
@@ -1686,16 +1828,17 @@ class World {
     const n = info.street ? 160 : (Q >= 3 ? 1400 : Q ? 900 : 500);
     const pine = mergeParts([[new THREE.CylinderGeometry(.25, .35, 3, 6), 0, 1.5, 0, '#5a3d24'], [new THREE.ConeGeometry(3, 6, 8), 0, 5, 0, '#2c5a2a'], [new THREE.ConeGeometry(2.3, 5, 8), 0, 7.8, 0, '#336b30'], [new THREE.ConeGeometry(1.5, 3.5, 8), 0, 10.2, 0, '#3b7a36']]);
     const leafy = mergeParts([[new THREE.CylinderGeometry(.3, .45, 4, 6), 0, 2, 0, '#5d4027'], [new THREE.IcosahedronGeometry(3.2, 1), 0, 6.2, 0, '#3f7d35'], [new THREE.IcosahedronGeometry(2.4, 1), 1.6, 7.2, .6, '#4a8c3c'], [new THREE.IcosahedronGeometry(2.2, 1), -1.4, 7, -.8, '#356f2e']]);
+    if (this.kit) this.kitTrees(cx, cz, size, clearance);
     if (Q >= 1) {
       const cross = (W, Hh) => { const a = new THREE.PlaneGeometry(W, Hh), b = new THREE.PlaneGeometry(W, Hh), c2 = new THREE.PlaneGeometry(W, Hh); b.rotateY(Math.PI / 2); c2.rotateY(Math.PI / 4); const m = mergeUV([[a], [b], [c2]]); m.translate(0, Hh / 2, 0); return m; };
       for (const [tex, frac, W, Hh] of [[TEX.treeA, .55, 9, 14], [TEX.treeB, .45, 7, 16]]) {
-        const cnt = Math.round(n * frac * 1.2);
+        const cnt = Math.round(n * frac * (this.kit ? .55 : 1.2));
         const tm = new THREE.InstancedMesh(cross(W, Hh), new THREE.MeshLambertMaterial({ map: tex, alphaTest: .45, side: THREE.DoubleSide }), cnt);
         tm.castShadow = Q >= 2;
         let k = 0;
         for (let tries = 0; tries < 12000 && k < cnt; tries++) {
           const x = cx + (Math.random() - .5) * size * .9, z = cz + (Math.random() - .5) * size * .9, d = clearance(x, z);
-          if (d < 30 || (info.street && d > 60)) continue;
+          if (d < (this.kit ? 140 : 30) || (info.street && d > 60)) continue;
           // bosquets : on regroupe les arbres
           const sc = .7 + Math.random() * .7;
           M.compose(P.set(x, 0, z), Qn.setFromAxisAngle(Y, Math.random() * 6), S.set(sc, sc * (.85 + Math.random() * .35), sc)); tm.setMatrixAt(k, M);
@@ -1867,6 +2010,7 @@ class World {
   sync(dt = 0) {
     const r = this.race, T = this.T;
     this.time += dt; World.crowdT.value = this.time;
+    if (this.balloons) for (const b of this.balloons) b.g.position.set(b.x + Math.sin(this.time * .01 * b.sp + b.ph) * 60, b.y + Math.sin(this.time * .05 + b.ph) * 4, b.z + Math.cos(this.time * .008 * b.sp + b.ph) * 60);
     const blink = Math.floor(this.time * 4) % 2 === 0;
     for (const [c, m] of this.cars) {
       m.g.position.set(c.x, c.y, c.z); m.g.rotation.y = c.h;
@@ -2415,6 +2559,81 @@ const CarGLB = {
     const lod = new THREE.LOD();
     lod.addLevel(mk(this.hi, sh), 0); lod.addLevel(mk(this.lo, sh), Q >= 3 ? 45 : Q >= 2 ? 30 : 14);
     return lod;
+  },
+};
+/* ---------------- DÉCOR IMPORTÉ ----------------
+   Objets extraits de « Cartoon Race Track - Oval » par RCC Design (Sketchfab), licence CC BY 4.0,
+   allégés (kit.glb) puis replacés automatiquement le long de chaque vrai tracé :
+   gradins couverts, murs grillagés, muret des stands, piles de pneus, arbres, lampadaires,
+   panneaux, montgolfières, passerelle, tentes, tour de contrôle, cônes.
+   Convention du kit : longueur selon x, côté piste vers -z, base à y = 0. */
+const Kit = {
+  st: 'off', protos: {},
+  avail() { return CarGLB.avail(); },
+  loader() {
+    if (THREE.GLTFLoader) return Promise.resolve();
+    if (!this._lp) this._lp = new Promise((res, rej) => { const s = document.createElement('script'); s.src = 'https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js'; s.onload = res; s.onerror = rej; document.head.appendChild(s); });
+    return this._lp;
+  },
+  init() {
+    if (this.st !== 'off') return this.p;
+    if (!this.avail()) { this.st = 'na'; return this.p = Promise.resolve(); }
+    this.st = 'loading';
+    this.p = this.loader().then(() => new Promise(res => new THREE.GLTFLoader().load('kit.glb', g => {
+      try {
+        g.scene.updateMatrixWorld(true);
+        for (const node of g.scene.children) {
+          const parts = [];
+          node.traverse(o => {
+            if (!o.isMesh) return;
+            const geo = o.geometry.clone(); geo.applyMatrix4(o.matrixWorld); geo.computeBoundingSphere(); geo.computeBoundingBox();
+            const m = o.material; m.userData.lin = true; m.userData.kit = true;
+            if (m.alphaTest > 0 || /fence/.test(m.name)) { m.side = THREE.DoubleSide; m.alphaTest = Math.max(m.alphaTest, .4); m.transparent = false; }
+            if (/baloon|banner/.test(m.name)) m.side = THREE.DoubleSide;
+            parts.push({ geo, mat: m });
+          });
+          const bb = new THREE.Box3(); parts.forEach(p => bb.union(p.geo.boundingBox));
+          this.protos[node.name] = { parts, bb };
+        }
+        this.st = 'ready';
+      } catch (e) { this.err = e.message; this.st = 'error'; }
+      res();
+    }, null, e => { this.err = String(e && e.message || e); this.st = 'error'; res(); }))).catch(() => { this.err = 'GLTFLoader'; this.st = 'error'; });
+    return this.p;
+  },
+  wait(ms = 15000) { return this.st === 'loading' ? Promise.race([this.p, new Promise(r => setTimeout(r, ms))]) : Promise.resolve(); },
+  has(n) { return this.st === 'ready' && !!this.protos[n]; },
+  // matrice d'un objet du kit : position, cap (direction de +z), échelle
+  mat(x, y, z, dx, dz, sx = 1, sy = 1, sz = 1, out = new THREE.Matrix4()) {
+    const a = Math.atan2(dx, dz), c = Math.cos(a), s = Math.sin(a);
+    return out.set(c * sx, 0, s * sz, x, 0, sy, 0, y, -s * sx, 0, c * sz, z, 0, 0, 0, 1);
+  },
+  // instancie un objet par paquets spatiaux (pour que les paquets hors champ ne soient pas dessinés)
+  place(scene, name, list, o = {}) {
+    const P = this.protos[name]; if (!P || !list.length) return [];
+    const cell = o.cell || 220, groups = new Map(), out = [];
+    for (const M of list) { const k = Math.floor(M.elements[12] / cell) + ',' + Math.floor(M.elements[14] / cell); if (!groups.has(k)) groups.set(k, []); groups.get(k).push(M); }
+    const v = new THREE.Vector3();
+    const T = new THREE.Matrix4(), M2 = new THREE.Matrix4();
+    for (const ms of groups.values()) {
+      // paquet centré sur son milieu ; au-delà de « far » mètres de la caméra, il n'est plus dessiné (LOD)
+      const box = new THREE.Box3(); for (const M of ms) box.expandByPoint(v.setFromMatrixPosition(M));
+      const c = box.getCenter(new THREE.Vector3()); T.makeTranslation(-c.x, -c.y, -c.z);
+      const sph = new THREE.Sphere(new THREE.Vector3(), box.getBoundingSphere(new THREE.Sphere()).radius + P.bb.getSize(v).length() * Math.max(o.maxScale || 1.5, 1));
+      const grp = new THREE.Group();
+      for (const p of P.parts) {
+        const g = new THREE.BufferGeometry();
+        for (const k in p.geo.attributes) g.setAttribute(k, p.geo.attributes[k]);
+        g.setIndex(p.geo.index); g.boundingSphere = sph;
+        const im = new THREE.InstancedMesh(g, p.mat, ms.length);
+        ms.forEach((M, i) => im.setMatrixAt(i, M2.multiplyMatrices(T, M)));
+        im.castShadow = !!o.shadow; im.receiveShadow = !!o.recv; im.userData.kit = true;
+        grp.add(im); out.push(im);
+      }
+      if (o.far) { const lod = new THREE.LOD(); lod.position.copy(c); lod.addLevel(grp, 0); lod.addLevel(new THREE.Object3D(), o.far + sph.radius * .5); scene.add(lod); }
+      else { grp.position.copy(c); scene.add(grp); }
+    }
+    return out;
   },
 };
 
@@ -4131,9 +4350,9 @@ function renderWeekend() {
 
 /* ---------------- DÉMARRAGE D'UNE SESSION ---------------- */
 function startSession(session) {
-  if (CarGLB.st !== 'loading') return startSessionNow(session);
-  toast('Chargement des voitures détaillées…');
-  CarGLB.wait().then(() => startSessionNow(session));
+  if (CarGLB.st !== 'loading' && Kit.st !== 'loading') return startSessionNow(session);
+  toast('Chargement des voitures et du décor…');
+  Promise.all([CarGLB.wait(), Kit.wait()]).then(() => startSessionNow(session));
 }
 function startSessionNow(session) {
   const wk = Game.wk, T = getTrack(wk.gp), def = TRACKS[wk.gp], team = TEAM[wk.team];
@@ -4580,6 +4799,8 @@ function settingsModal(onClose) {
         <p class="muted" style="font-size:13px;margin:0">Haute : ombres, herbe, public animé. Ultra : ombres et image plus fines, plus de décor (iPad récent ou ordinateur). Appliqué à la prochaine course.</p>
         <div class="opt"><label>Style de piste</label><div class="seg" id="st-ts"><button data-v="model" class="${p.trackStyle !== 'real' ? 'on' : ''}">Modèle importé</button><button data-v="real" class="${p.trackStyle === 'real' ? 'on' : ''}">Classique</button></div></div>
         <p class="muted" style="font-size:13px;margin:0">Modèle importé : route gris clair et vibreurs bombés rouge et blanc (modèle « Piste de Course » de gamehubgamehubsenegal, Sketchfab, CC BY 4.0), sur les vrais tracés. Appliqué à la prochaine course.</p>
+        <div class="opt"><label>Décor</label><div class="seg" id="st-dc"><button data-v="kit" class="${p.decor !== 'classic' ? 'on' : ''}">Modèle importé</button><button data-v="classic" class="${p.decor === 'classic' ? 'on' : ''}">Classique</button></div></div>
+        <p class="muted" style="font-size:13px;margin:0">Modèle importé : gradins couverts, murs grillagés, muret des stands, piles de pneus, arbres, lampadaires, panneaux, passerelle, tentes, tour et montgolfières (« Cartoon Race Track - Oval » de RCC Design, Sketchfab, CC BY 4.0), placés le long des vrais tracés. ${Kit.st === 'ready' ? 'Chargé.' : Kit.st === 'loading' ? 'Chargement…' : Kit.st === 'na' ? 'Disponible dans l\'appli installée (site).' : Kit.st === 'off' ? 'Qualité Moyenne ou plus.' : 'Échec du chargement.'}</p>
         <div class="opt"><label>Son des moteurs</label><div class="seg" id="st-s"><button data-v="1" class="${p.sound ? 'on' : ''}">Oui</button><button data-v="0" class="${!p.sound ? 'on' : ''}">Non</button></div></div>
         <div class="opt"><label>Incidents aléatoires</label><div class="seg" id="st-inc"><button data-v="1" class="${p.incidents !== false ? 'on' : ''}">Oui</button><button data-v="0" class="${p.incidents === false ? 'on' : ''}">Non</button></div></div>
         <p class="muted" style="font-size:13px;margin:0">Accidents, casses, crevaisons de temps en temps, avec safety car, VSC ou drapeau rouge décidés par la direction de course.</p>
@@ -4593,11 +4814,12 @@ function settingsModal(onClose) {
     $('#st-vd').onchange = e => { p.voiceDrv = e.target.value; Store.savePrefs(p); };
     $('#st-vet').onclick = () => Speech.test('eng'); $('#st-vdt').onclick = () => Speech.test('drv');
     const seg = (id, fn) => $$('#' + id + ' button').forEach(b => b.onclick = () => { fn(b.dataset.v); Store.savePrefs(p); draw(); });
-    seg('st-v', v => p.voice = v === '1'); seg('st-q', v => { p.quality = +v; if (p.quality >= 1) CarGLB.init(); });
+    seg('st-v', v => p.voice = v === '1'); seg('st-q', v => { p.quality = +v; if (p.quality >= 1) { CarGLB.init(); Kit.init(); } });
     seg('st-s', v => { p.sound = v === '1'; if (Game.raf) { Sfx.init(); p.sound ? Sfx.engineOn() : Sfx.engineOff(); } });
     seg('st-o', v => p.others = v === '1');
     seg('st-inc', v => p.incidents = v === '1');
     seg('st-ts', v => p.trackStyle = v);
+    seg('st-dc', v => p.decor = v);
     seg('st-nn', v => p.neural = v === '1');
     seg('st-mk', v => { p.micKeep = v === '1'; if (!p.micKeep && !Mic.gate) Mic.shutdown(); });
     $('#st-ok').onclick = () => { $('#modal').classList.remove('on'); onClose && onClose(); };
@@ -4755,7 +4977,7 @@ function engineAudio(r, w, dt) {
   if (Speech.ok) speechSynthesis.onvoiceschanged = () => { };
   AI.init();
   if (Game.prefs.neural) Neural.init();
-  if (Game.prefs.quality >= 1) CarGLB.init();
+  if (Game.prefs.quality >= 1) { CarGLB.init(); Kit.init(); }
   document.addEventListener('pointerdown', () => Sfx.init(), { passive: true });
   renderHome();
 })();
