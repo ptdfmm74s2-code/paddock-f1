@@ -1708,11 +1708,11 @@ class World {
       // pas de gradin posé sur une autre portion de piste (épingles, circuits urbains)
       let near = 1e9; for (let i = 0; i < T.N; i += 3) { const d = Math.hypot(T.px[i] - p.x, T.pz[i] - p.z); if (d < near) near = d; }
       if (near < T.hw + 9) continue;
-      Kit.mat(p.x, p.y, p.z, nx, nz, 1, 1, 1, M); this._stands.push(M.clone());
+      Kit.mat(p.x, p.y, p.z, -nx, -nz, 1, 1, 1, M); this._stands.push(M.clone()); // sièges du modèle tournés vers +z = vers la piste
       // spectateurs sur les gradins (8 rangées)
       for (let r = 0; r < 8; r++) for (let c = 0; c < 13; c++) {
         if (Math.random() < .22) continue;
-        L.makeTranslation(-7.2 + c * 1.2 + (Math.random() - .5) * .3, 1.45 + r * .93, -6.4 + r * 1.55); this._crowd.push(M.clone().multiply(L));
+        L.makeTranslation(-7.2 + c * 1.2 + (Math.random() - .5) * .3, 1.45 + r * .93, 6.4 - r * 1.55); this._crowd.push(M.clone().multiply(L));
       }
     }
   }
