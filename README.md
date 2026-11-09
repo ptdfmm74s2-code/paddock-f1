@@ -10,3 +10,4 @@ Tracés des circuits : bacinger/f1-circuits (licence MIT, © Tomislav Bacinger).
 
 ## Crédits
 - Voiture 3D : « 2026 Redbull RB22 » par **Dave Love** (Sketchfab), licence [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). Modifiée : allégée, roues remplacées par des roues animées, livrées recolorées pour chaque écurie.
+- Style de route et vibreurs : « Piste de Course » par **gamehubgamehubsenegal** (Sketchfab), licence [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/), appliqué aux vrais tracés.
