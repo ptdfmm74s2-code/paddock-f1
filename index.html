@@ -19,7 +19,6 @@
   Paddock F1 — manager (mur des stands) ou pilote, saison complète 2026.
   Tracés des circuits : bacinger/f1-circuits (licence MIT, © Tomislav Bacinger).
   Voiture 3D : « 2026 Redbull RB22 » par Dave Love (sketchfab.com), licence CC BY 4.0 — modifiée (allégée, roues remplacées, livrées recolorées).
-  Style des vibreurs et de la route : « Piste de Course » par gamehubgamehubsenegal (sketchfab.com), licence CC BY 4.0.
   Décor : « Cartoon Race Track - Oval » par RCC Design (sketchfab.com), licence CC BY 4.0 — objets allégés et replacés.
   Jeu de fan non officiel : aucun lien avec la Formula 1, la FIA ou les écuries.
 -->
@@ -1463,47 +1462,52 @@ class World {
   buildTrack() {
     const T = this.Tf || (this.Tf = refineTrack(this.T, 2)), s = this.scene, hw = T.hw, info = T.info, Q = this.Q, L = T.L;
     const recv = m => { m.receiveShadow = Q >= 2; return m; };
-    // style de piste : « modèle » = route gris clair lisse + vibreurs bombés rouge/blanc (d'après le modèle « Piste de Course », CC BY 4.0)
-    const MS = this.trackModel = !(typeof Game !== 'undefined' && Game.prefs && Game.prefs.trackStyle === 'real');
-    this.roadBase = 1;
-    const asph = MS ? canvasTex(256, 256, (g, W, H) => {
-      g.fillStyle = '#56585c'; g.fillRect(0, 0, W, H);
-      for (let k = 0; k < 9000; k++) { const v = 70 + Math.random() * 36 | 0; g.fillStyle = `rgba(${v},${v},${v + 3},.35)`; g.fillRect(Math.random() * W, Math.random() * H, 1.5, 1.5); }
-    }) : TEX.asphalt.clone();
-    if (MS) { asph.wrapS = asph.wrapT = THREE.RepeatWrapping; }
+    // style de piste : « modèle importé » = textures et couleurs de « Cartoon Race Track - Oval » (RCC Design, CC BY 4.0) :
+    // asphalte sombre, lignes blanches, bande violette le long des bords, vibreurs noir et blanc, herbe et gravier du modèle
+    const KT = this.trackKit = !(typeof Game !== 'undefined' && Game.prefs && Game.prefs.trackStyle === 'real');
+    const KX = KT && Kit.has('tex_road');
+    this.roadBase = KT ? 1.45 : 1;
+    const solid = (c, n) => canvasTex(256, 256, (g, W, H) => { g.fillStyle = c; g.fillRect(0, 0, W, H); for (let k = 0; k < 6000; k++) { g.fillStyle = `rgba(${n},${n},${n},.08)`; g.fillRect(Math.random() * W, Math.random() * H, 1.5, 1.5); } });
+    const asph = KT ? (KX ? Kit.crop('tex_road', .78, .99) : solid('#282b2b', 70)) : TEX.asphalt.clone();
     asph.needsUpdate = true; asph.repeat.set(T.w / 8, 1);
     const asN = TEX.asphaltN.clone(); asN.needsUpdate = true; asN.repeat.set(T.w / 4, 2);
-    this.roadMat = new THREE.MeshStandardMaterial({ map: asph, normalMap: Q >= 1 ? asN : null, normalScale: new THREE.Vector2(MS ? .1 : .22, MS ? .1 : .22), roughness: MS ? .8 : .88, metalness: 0, side: THREE.DoubleSide });
+    this.roadMat = new THREE.MeshStandardMaterial({ map: asph, normalMap: Q >= 1 ? asN : null, normalScale: new THREE.Vector2(KT ? .12 : .22, KT ? .12 : .22), roughness: KT ? .85 : .88, metalness: 0, side: THREE.DoubleSide });
     // asphalte : zones refaites plus sombres, zones usées plus claires
-    const patch = i => { const a = Math.sin(i * .021) * .5 + Math.sin(i * .0071 + 1.3) * .5, b = Math.sin(i * .13) > .93 ? -.12 : 0; return MS ? clamp(.99 + a * .02 + b * .2, .95, 1.02) : clamp(.94 + a * .07 + b, .78, 1.06); };
+    const patch = i => { const a = Math.sin(i * .021) * .5 + Math.sin(i * .0071 + 1.3) * .5, b = Math.sin(i * .13) > .93 ? -.12 : 0; return KT ? clamp(.97 + a * .04 + b * .3, .9, 1.03) : clamp(.94 + a * .07 + b, .78, 1.06); };
     this.roadMat.vertexColors = true;
     s.add(recv(new THREE.Mesh(ribbon(T, () => -hw, () => hw, .06, { uvScale: 8, colFn: i => { const v = patch(i); return new THREE.Color(v, v, v * 1.01); } }), this.roadMat)));
     // gomme sur la trajectoire + traces de freinage
-    const rub = new THREE.MeshBasicMaterial({ color: 0, transparent: true, opacity: .2, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -1, side: THREE.DoubleSide });
+    const rub = new THREE.MeshBasicMaterial({ color: 0, transparent: true, opacity: KT ? .12 : .2, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -1, side: THREE.DoubleSide });
     s.add(new THREE.Mesh(ribbon(T, i => T.line[i] - 1.3, i => T.line[i] + 1.3, .065), rub));
     const skid = new THREE.MeshBasicMaterial({ color: 0x050505, transparent: true, opacity: .28, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, side: THREE.DoubleSide });
     const brakeZone = i => T.vp[i] - T.vp[(i + 8) % T.N] > 5 && Math.sin(i * 12.9898) > -.3;
     for (const off of [-.85, .85]) s.add(new THREE.Mesh(strips(T, i => brakeZone(i) ? { a: T.line[i] + off - .12, b: T.line[i] + off + .12, y0: .07, color: '#000' } : null), skid));
     // lignes blanches
     const white = new THREE.MeshStandardMaterial({ color: 0xeeeeee, roughness: .6, side: THREE.DoubleSide });
-    const lw0 = MS ? .7 : .45;
-    s.add(recv(new THREE.Mesh(ribbon(T, () => hw - lw0, () => hw - .1, .08), white)));
-    s.add(recv(new THREE.Mesh(ribbon(T, () => -hw + .1, () => -hw + lw0, .08), white)));
+    s.add(recv(new THREE.Mesh(ribbon(T, () => hw - .45, () => hw - .1, .08), white)));
+    s.add(recv(new THREE.Mesh(ribbon(T, () => -hw + .1, () => -hw + .45, .08), white)));
+    // bande violette du modèle le long des deux bords
+    const band = KT ? 2.6 : 1.3;
+    if (KT) {
+      const purple = new THREE.MeshStandardMaterial({ map: KX ? Kit.crop('tex_road', .39, .48) : solid('#2c1f3b', 90), roughness: .8, side: THREE.DoubleSide });
+      purple.map.repeat.set(1, 1);
+      for (const sd of [1, -1]) s.add(recv(new THREE.Mesh(ribbon(T, () => sd * hw, () => sd * (hw + band), .055, { uvScale: 8 }), purple)));
+    }
     // dégagements : graviers / asphalte / herbe
     const corner = i => Math.abs(T.k40[i]) > 1 / 320;
     const gravelZone = i => !info.street && corner(i) && (Math.floor(i / 70) % 3 === 0);
-    const runTex = canvasTex(256, 256, (g, W, H) => {
+    const runTex = KT ? (KX ? Kit.crop('tex_road', .54, .72) : solid('#4c5151', 120)) : canvasTex(256, 256, (g, W, H) => {
       g.drawImage(TEX.asphalt.image, 0, 0, W, H); g.fillStyle = 'rgba(205,212,220,.55)'; g.fillRect(0, 0, W, H);
       const cA = ['#c8102e', '#1e5aa8', '#2f8a4c'][Math.abs(T.N) % 3];
       for (let y = 0; y < H; y += 32) { g.fillStyle = (y / 32) % 2 ? cA : '#f2f2f2'; g.fillRect(0, y, W * .22, 32); }
       g.fillStyle = 'rgba(255,255,255,.85)'; g.fillRect(W * .22, 0, 4, H);
     });
     const runMat = new THREE.MeshStandardMaterial({ map: runTex, roughness: .9, side: THREE.DoubleSide });
-    const gravMat = new THREE.MeshStandardMaterial({ map: TEX.gravel, roughness: 1, side: THREE.DoubleSide });
-    const grassMat = new THREE.MeshStandardMaterial({ map: TEX.grass, roughness: 1, side: THREE.DoubleSide });
+    const gravMat = new THREE.MeshStandardMaterial({ map: KT && Kit.has('tex_gravel') ? Kit.mapOf('tex_gravel') : TEX.gravel, roughness: 1, side: THREE.DoubleSide });
+    const grassMat = new THREE.MeshStandardMaterial({ map: KT && Kit.has('tex_grass') ? Kit.mapOf('tex_grass') : TEX.grass, roughness: 1, side: THREE.DoubleSide });
     for (const sd of [1, -1]) {
       const W = i => sd > 0 ? T.wallP[i] : T.wallN[i];
-      const A = i => sd * (hw + 1.3), Bf = i => sd * W(i);
+      const A = i => sd * (hw + band), Bf = i => sd * W(i);
       if (info.street) s.add(recv(new THREE.Mesh(ribbon(T, A, Bf, .03, { uvScale: 8 }), runMat)));
       else {
         s.add(recv(new THREE.Mesh(ribbon(T, A, Bf, .03, { filter: i => corner(i) && !gravelZone(i) }), runMat)));
@@ -1511,24 +1515,20 @@ class World {
         s.add(recv(new THREE.Mesh(ribbon(T, A, Bf, .03, { filter: i => !corner(i), uvScale: 30, uScale: 2 }), grassMat)));
       }
     }
-    // vibreurs en relief + bande verte peinte
-    const kerbMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: MS ? .75 : .55, envMapIntensity: MS ? .45 : 1, side: THREE.DoubleSide });
+    // vibreurs : noir et blanc (modèle importé) ou rouge et blanc + bande verte peinte (classique)
+    const kerbMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .6, side: THREE.DoubleSide });
     const isK = i => Math.abs(T.k40[i]) > 1 / 230;
     const kc = (i, alt) => (Math.floor(i * T.ds / 3) % 2) ? '#d61f1f' : alt;
-    // vibreur bombé : grands blocs rouges (3 m) et blancs (2 m), liserés blancs
-    const kcM = (i, k, n) => k === 0 || k === n - 1 ? '#f4f4f4' : (i * T.ds % 5) < 3 ? '#f01c1c' : '#f4f4f4';
+    const kcK = i => (i * T.ds % 2) < 1 ? '#f2f2f2' : '#3e3e3c';
     for (const sd of [1, -1]) {
-      if (MS) {
-        const n = 8, a0 = hw - .1, wd = 1.55, hh = .17, prof = t => .065 + hh * Math.pow(Math.sin(Math.PI * t), .7);
-        for (let k = 0; k < n; k++) {
-          const t0 = k / n, t1 = (k + 1) / n, tm = (t0 + t1) / 2, sl = (prof(t1) - prof(t0)) / (wd / n), nl = Math.hypot(1, sl);
-          s.add(recv(new THREE.Mesh(strips(T, i => isK(i) ? { a: sd * (a0 + wd * t0), b: sd * (a0 + wd * t1), y0: prof(t0), y1: prof(t1), color: kcM(i, k, n), n: [-sd * sl / nl, 1 / nl] } : null), kerbMat)));
-        }
+      if (KT) {
+        s.add(recv(new THREE.Mesh(strips(T, i => isK(i) ? { a: sd * (hw - .05), b: sd * (hw + .6), y0: .07, y1: .115, color: kcK(i) } : null), kerbMat)));
+        s.add(recv(new THREE.Mesh(strips(T, i => isK(i) ? { a: sd * (hw + .6), b: sd * (hw + 1.2), y0: .115, y1: .07, color: kcK(i) } : null), kerbMat)));
       } else {
         s.add(recv(new THREE.Mesh(strips(T, i => isK(i) ? { a: sd * (hw - .05), b: sd * (hw + .7), y0: .07, y1: .14, color: kc(i, '#f2f2f2') } : null), kerbMat)));
         s.add(recv(new THREE.Mesh(strips(T, i => isK(i) ? { a: sd * (hw + .7), b: sd * (hw + 1.35), y0: .14, y1: .08, color: kc(i, '#f2f2f2') } : null), kerbMat)));
+        if (!info.street) s.add(recv(new THREE.Mesh(strips(T, i => isK(i) ? { a: sd * (hw + 1.35), b: sd * (hw + 3.3), y0: .045, color: Math.floor(i / 3) % 6 === 0 ? '#c42b2b' : '#2f8a4c' } : null), kerbMat)));
       }
-      if (!info.street) s.add(recv(new THREE.Mesh(strips(T, i => isK(i) ? { a: sd * (hw + (MS ? 1.45 : 1.35)), b: sd * (hw + 3.3), y0: .045, color: Math.floor(i / 3) % 6 === 0 ? '#c42b2b' : '#2f8a4c' } : null), kerbMat)));
     }
     // voie des stands
     const uOf = i => mod(i * T.ds - (L - T.pitIn), L), inPit = i => uOf(i) <= T.pitLen;
@@ -1787,7 +1787,7 @@ class World {
   buildScenery() {
     const T = this.T, s = this.scene, info = T.info, Q = this.Q;
     const cx = (T.minX + T.maxX) / 2, cz = (T.minZ + T.maxZ) / 2, size = Math.max(T.maxX - T.minX, T.maxZ - T.minZ) + 1800;
-    const gtex = (info.street ? TEX.city : TEX.grass).clone(); gtex.needsUpdate = true; gtex.repeat.set(size / (info.street ? 40 : 30), size / (info.street ? 40 : 30));
+    const gtex = (info.street ? TEX.city : this.trackKit && Kit.has('tex_grass') ? Kit.mapOf('tex_grass') : TEX.grass).clone(); gtex.needsUpdate = true; gtex.repeat.set(size / (info.street ? 40 : 30), size / (info.street ? 40 : 30));
     const ground = new THREE.Mesh(new THREE.PlaneGeometry(size, size), new THREE.MeshStandardMaterial({ map: gtex, roughness: 1, color: info.night ? 0x8890a0 : 0xffffff }));
     ground.rotation.x = -Math.PI / 2; ground.position.set(cx, -.05, cz); ground.receiveShadow = Q >= 2; s.add(ground);
     // grille spatiale pour éviter de placer le décor sur la piste
@@ -1997,7 +1997,7 @@ class World {
   // hauteur d'un vibreur (au-dessus de la route) à une distance latérale donnée du centre de la piste
   kerbH(lat) {
     const a = Math.abs(lat), hw = this.Tf.hw;
-    if (this.trackModel) { const t = (a - (hw - .1)) / 1.55; return t <= 0 || t >= 1 ? 0 : .005 + .17 * Math.pow(Math.sin(Math.PI * t), .7); }
+    if (this.trackKit) { if (a < hw - .05 || a > hw + 1.2) return 0; return a < hw + .6 ? .01 + .045 * (a - hw + .05) / .65 : .055 - .045 * (a - hw - .6) / .6; }
     if (a < hw - .05 || a > hw + 1.35) return 0;
     return a < hw + .7 ? .01 + .07 * (a - hw + .05) / .75 : .08 - .06 * (a - hw - .7) / .65;
   }
@@ -2603,6 +2603,14 @@ const Kit = {
   },
   wait(ms = 15000) { return this.st === 'loading' ? Promise.race([this.p, new Promise(r => setTimeout(r, ms))]) : Promise.resolve(); },
   has(n) { return this.st === 'ready' && !!this.protos[n]; },
+  img(n) { const P = this.protos[n], m = P && P.parts[0] && P.parts[0].mat; return m && m.map && m.map.image; },
+  // découpe une bande (v0 → v1, fraction de la hauteur) d'une texture du modèle, en motif répétable
+  crop(n, v0, v1, W = 256) {
+    const img = this.img(n), cv = document.createElement('canvas'); cv.width = cv.height = W;
+    const iw = img.width, ih = img.height; cv.getContext('2d').drawImage(img, iw * .05, ih * v0, iw * .9, ih * (v1 - v0), 0, 0, W, W);
+    const t = new THREE.CanvasTexture(cv); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = 8; return t;
+  },
+  mapOf(n) { const m = this.protos[n].parts[0].mat.map, t = m.clone(); t.needsUpdate = true; t.wrapS = t.wrapT = THREE.RepeatWrapping; return t; },
   // matrice d'un objet du kit : position, cap (direction de +z), échelle
   mat(x, y, z, dx, dz, sx = 1, sy = 1, sz = 1, out = new THREE.Matrix4()) {
     const a = Math.atan2(dx, dz), c = Math.cos(a), s = Math.sin(a);
@@ -4798,7 +4806,7 @@ function settingsModal(onClose) {
         <div class="opt"><label>Qualité graphique</label><div class="seg" id="st-q">${['Basse', 'Moyenne', 'Haute', 'Ultra'].map((x, i) => `<button data-v="${i}" class="${p.quality === i ? 'on' : ''}">${x}</button>`).join('')}</div></div>
         <p class="muted" style="font-size:13px;margin:0">Haute : ombres, herbe, public animé. Ultra : ombres et image plus fines, plus de décor (iPad récent ou ordinateur). Appliqué à la prochaine course.</p>
         <div class="opt"><label>Style de piste</label><div class="seg" id="st-ts"><button data-v="model" class="${p.trackStyle !== 'real' ? 'on' : ''}">Modèle importé</button><button data-v="real" class="${p.trackStyle === 'real' ? 'on' : ''}">Classique</button></div></div>
-        <p class="muted" style="font-size:13px;margin:0">Modèle importé : route gris clair et vibreurs bombés rouge et blanc (modèle « Piste de Course » de gamehubgamehubsenegal, Sketchfab, CC BY 4.0), sur les vrais tracés. Appliqué à la prochaine course.</p>
+        <p class="muted" style="font-size:13px;margin:0">Modèle importé : asphalte sombre, lignes blanches, bande violette sur les bords, vibreurs noir et blanc, herbe et gravier de « Cartoon Race Track - Oval » (RCC Design, CC BY 4.0), sur les vrais tracés. Appliqué à la prochaine course.</p>
         <div class="opt"><label>Décor</label><div class="seg" id="st-dc"><button data-v="kit" class="${p.decor !== 'classic' ? 'on' : ''}">Modèle importé</button><button data-v="classic" class="${p.decor === 'classic' ? 'on' : ''}">Classique</button></div></div>
         <p class="muted" style="font-size:13px;margin:0">Modèle importé : gradins couverts, murs grillagés, muret des stands, piles de pneus, arbres, lampadaires, panneaux, passerelle, tentes, tour et montgolfières (« Cartoon Race Track - Oval » de RCC Design, Sketchfab, CC BY 4.0), placés le long des vrais tracés. ${Kit.st === 'ready' ? 'Chargé.' : Kit.st === 'loading' ? 'Chargement…' : Kit.st === 'na' ? 'Disponible dans l\'appli installée (site).' : Kit.st === 'off' ? 'Qualité Moyenne ou plus.' : 'Échec du chargement.'}</p>
         <div class="opt"><label>Son des moteurs</label><div class="seg" id="st-s"><button data-v="1" class="${p.sound ? 'on' : ''}">Oui</button><button data-v="0" class="${!p.sound ? 'on' : ''}">Non</button></div></div>
