@@ -20,6 +20,7 @@
   Tracés des circuits : bacinger/f1-circuits (licence MIT, © Tomislav Bacinger).
   Voiture 3D : « 2026 Redbull RB22 » par Dave Love (sketchfab.com), licence CC BY 4.0 — modifiée (allégée, roues remplacées, livrées recolorées).
   Décor : « Cartoon Race Track - Oval » par RCC Design (sketchfab.com), licence CC BY 4.0 — objets allégés et replacés.
+  Safety Car : « 2019 Mercedes-Benz AMG GTR Safety Car » par OUTPISTON (sketchfab.com), licence CC BY-NC-SA 4.0 (textures recompressées).
   Jeu de fan non officiel : aucun lien avec la Formula 1, la FIA ou les écuries.
 -->
 <style>
@@ -2645,6 +2646,34 @@ const Kit = {
   },
 };
 
+/* ---------------- SAFETY CAR IMPORTÉE ----------------
+   « 2019 Mercedes-Benz AMG GTR Safety Car » par OUTPISTON (Sketchfab), licence CC BY-NC-SA 4.0
+   (textures recompressées). Avant = +z, sol à y = 0. Roues animées, rampe lumineuse clignotante. */
+const SafetyGLB = {
+  st: 'off', scene: null,
+  init() {
+    if (this.st !== 'off') return this.p;
+    if (!Kit.avail()) { this.st = 'na'; return this.p = Promise.resolve(); }
+    this.st = 'loading';
+    this.p = Kit.loader().then(() => new Promise(res => new THREE.GLTFLoader().load('sc.glb', g => {
+      g.scene.traverse(o => {
+        if (!o.isMesh) return; o.castShadow = true;
+        const m = o.material; m.userData.lin = true;
+        if (m.transmission) { m.transmission = 0; m.transparent = true; m.opacity = .5; m.depthWrite = false; }
+        if (/ext|chassis/.test(m.name)) { m.roughness = Math.max(m.roughness, .22); m.metalness = Math.max(m.metalness, .15); }
+      });
+      this.scene = g.scene; this.st = 'ready'; res();
+    }, null, e => { this.err = String(e && e.message || e); this.st = 'error'; res(); }))).catch(() => { this.st = 'error'; });
+    return this.p;
+  },
+  wait(ms = 15000) { return this.st === 'loading' ? Promise.race([this.p, new Promise(r => setTimeout(r, ms))]) : Promise.resolve(); },
+  build() {
+    const root = this.scene.clone(true), wheels = [];
+    root.traverse(o => { if (/TYRE|WHEEL/i.test(o.name) && !o.isMesh) wheels.push({ o, q0: o.quaternion.clone() }); });
+    return { root, wheels };
+  },
+};
+
 /* =====================================================================
    VOITURE DE SÉCURITÉ / MÉDICALE, POSTES DE COMMISSAIRES, PERSONNES
    ===================================================================== */
@@ -2664,6 +2693,14 @@ function safetyTex(kind) {
 }
 function makeSafetyMesh(kind) {
   const g = new THREE.Group();
+  if (kind === 'sc' && SafetyGLB.st === 'ready') {
+    // Mercedes-AMG GT R Safety Car importée : rampe lumineuse qui clignote par-dessus celle du modèle
+    const { root, wheels } = SafetyGLB.build(); g.add(root);
+    const lights = [];
+    for (const x of [-.36, -.12, .12, .36]) { const l = new THREE.Mesh(new THREE.BoxGeometry(.22, .05, .2), new THREE.MeshBasicMaterial({ color: 0xffa000 })); l.position.set(x, 1.43, -.75); g.add(l); lights.push(l); }
+    const sh = new THREE.Mesh(new THREE.PlaneGeometry(2.3, 4.9), new THREE.MeshBasicMaterial({ color: 0, transparent: true, opacity: .35, depthWrite: false, map: TEX.soft })); sh.rotation.x = -Math.PI / 2; sh.position.y = .03; g.add(sh);
+    return { g, lights, kind, glb: true, wheels, spin: 0 };
+  }
   const body = loft([[-2.3, 1.86, .5, .55, 3.2], [-1.6, 1.96, .62, .6, 3], [-.2, 1.96, .6, .58, 3], [1.2, 1.88, .44, .5, 3], [2.25, 1.7, .24, .42, 2.6]], { seg: 32, floor: .16 });
   const cabin = loft([[-1.35, 1.4, .26, .93, 2.4], [-.6, 1.56, .5, 1.0, 2.6], [.35, 1.5, .4, .95, 2.4], [.85, 1.36, .14, .88, 2]], { seg: 24 });
   g.add(new THREE.Mesh(body, new THREE.MeshPhysicalMaterial({ map: safetyTex(kind), roughness: .3, metalness: .5, clearcoat: 1, clearcoatRoughness: .05 })));
@@ -2752,7 +2789,12 @@ Object.assign(World.prototype, {
       if (m && e && e.x !== undefined) {
         m.g.position.set(e.x, e.y, e.z); m.g.rotation.y = e.h;
         const on = Math.floor(this.time * 6) % 2;
-        m.lights.forEach((l, k) => l.material.color.setHex((k % 2) === on ? (key === 'sc' ? 0xffa000 : (k < 2 ? 0x2060ff : 0xffa000)) : 0x221100));
+        if (m.glb) {
+          m.lights.forEach((l, k) => l.visible = (k % 2) === on);
+          // roues qui tournent selon la distance parcourue
+          const d = m.px !== undefined ? Math.hypot(e.x - m.px, e.z - m.pz) : 0; m.px = e.x; m.pz = e.z;
+          if (d < 20) { m.spin = (m.spin + d / .34) % (Math.PI * 2); const q = this._qx || (this._qx = new THREE.Quaternion()), ax = this._ax || (this._ax = new THREE.Vector3(1, 0, 0)); q.setFromAxisAngle(ax, m.spin); m.wheels.forEach(w => w.o.quaternion.copy(w.q0).multiply(q)); }
+        } else m.lights.forEach((l, k) => l.material.color.setHex((k % 2) === on ? (key === 'sc' ? 0xffa000 : (k < 2 ? 0x2060ff : 0xffa000)) : 0x221100));
       }
     }
     // drapeaux des commissaires
@@ -4358,9 +4400,9 @@ function renderWeekend() {
 
 /* ---------------- DÉMARRAGE D'UNE SESSION ---------------- */
 function startSession(session) {
-  if (CarGLB.st !== 'loading' && Kit.st !== 'loading') return startSessionNow(session);
+  if (CarGLB.st !== 'loading' && Kit.st !== 'loading' && SafetyGLB.st !== 'loading') return startSessionNow(session);
   toast('Chargement des voitures et du décor…');
-  Promise.all([CarGLB.wait(), Kit.wait()]).then(() => startSessionNow(session));
+  Promise.all([CarGLB.wait(), Kit.wait(), SafetyGLB.wait()]).then(() => startSessionNow(session));
 }
 function startSessionNow(session) {
   const wk = Game.wk, T = getTrack(wk.gp), def = TRACKS[wk.gp], team = TEAM[wk.team];
@@ -4813,7 +4855,7 @@ function settingsModal(onClose) {
         <div class="opt"><label>Incidents aléatoires</label><div class="seg" id="st-inc"><button data-v="1" class="${p.incidents !== false ? 'on' : ''}">Oui</button><button data-v="0" class="${p.incidents === false ? 'on' : ''}">Non</button></div></div>
         <p class="muted" style="font-size:13px;margin:0">Accidents, casses, crevaisons de temps en temps, avec safety car, VSC ou drapeau rouge décidés par la direction de course.</p>
         <div class="opt"><label>Radio des autres écuries</label><div class="seg" id="st-o"><button data-v="1" class="${p.others ? 'on' : ''}">Oui</button><button data-v="0" class="${!p.others ? 'on' : ''}">Non</button></div></div>
-        <p class="muted" style="font-size:12px;margin:0">Voitures détaillées : ${CarGLB.st === 'ready' ? 'chargées' : CarGLB.st === 'loading' ? 'chargement…' : CarGLB.st === 'na' ? 'disponibles dans l\'appli installée (site)' : CarGLB.st === 'off' ? 'qualité Moyenne ou plus' : 'échec du chargement' + (CarGLB.err ? ' (' + esc(String(CarGLB.err)) + ')' : '')}. Modèle 3D « 2026 Redbull RB22 » par Dave Love (Sketchfab), licence CC BY 4.0, allégé et recoloré pour chaque écurie.</p>
+        <p class="muted" style="font-size:12px;margin:0">Voitures détaillées : ${CarGLB.st === 'ready' ? 'chargées' : CarGLB.st === 'loading' ? 'chargement…' : CarGLB.st === 'na' ? 'disponibles dans l\'appli installée (site)' : CarGLB.st === 'off' ? 'qualité Moyenne ou plus' : 'échec du chargement' + (CarGLB.err ? ' (' + esc(String(CarGLB.err)) + ')' : '')}. Modèle 3D « 2026 Redbull RB22 » par Dave Love (Sketchfab), licence CC BY 4.0, allégé et recoloré pour chaque écurie. Safety Car « 2019 Mercedes-Benz AMG GTR Safety Car » par OUTPISTON (Sketchfab), licence CC BY-NC-SA 4.0.</p>
         <button class="btn primary" id="st-ok">Fermer</button>
       </div>`;
     if ($('#st-nd')) $('#st-nd').onclick = () => { Neural.download(() => { const el = $('#st-np'); if (el) el.textContent = 'Téléchargement… ' + Math.round(Neural.prog * 100) + ' %'; }).then(ok => { if (ok) { p.neural = true; Store.savePrefs(p); toast('Voix fluide installée.'); } if ($('#modal').classList.contains('on') && $('#st-ve')) draw(); }); draw(); };
@@ -4822,7 +4864,7 @@ function settingsModal(onClose) {
     $('#st-vd').onchange = e => { p.voiceDrv = e.target.value; Store.savePrefs(p); };
     $('#st-vet').onclick = () => Speech.test('eng'); $('#st-vdt').onclick = () => Speech.test('drv');
     const seg = (id, fn) => $$('#' + id + ' button').forEach(b => b.onclick = () => { fn(b.dataset.v); Store.savePrefs(p); draw(); });
-    seg('st-v', v => p.voice = v === '1'); seg('st-q', v => { p.quality = +v; if (p.quality >= 1) { CarGLB.init(); Kit.init(); } });
+    seg('st-v', v => p.voice = v === '1'); seg('st-q', v => { p.quality = +v; if (p.quality >= 1) { CarGLB.init(); Kit.init(); SafetyGLB.init(); } });
     seg('st-s', v => { p.sound = v === '1'; if (Game.raf) { Sfx.init(); p.sound ? Sfx.engineOn() : Sfx.engineOff(); } });
     seg('st-o', v => p.others = v === '1');
     seg('st-inc', v => p.incidents = v === '1');
@@ -4985,7 +5027,7 @@ function engineAudio(r, w, dt) {
   if (Speech.ok) speechSynthesis.onvoiceschanged = () => { };
   AI.init();
   if (Game.prefs.neural) Neural.init();
-  if (Game.prefs.quality >= 1) { CarGLB.init(); Kit.init(); }
+  if (Game.prefs.quality >= 1) { CarGLB.init(); Kit.init(); SafetyGLB.init(); }
   document.addEventListener('pointerdown', () => Sfx.init(), { passive: true });
   renderHome();
 })();
