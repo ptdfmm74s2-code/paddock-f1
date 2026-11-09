@@ -395,6 +395,9 @@ table.std td.r, table.std th.r { text-align: right; }
 .secs i.purple { background: #a020f0; color: #fff; } .secs i.green { background: #12b04c; color: #fff; }
 .secs i.yellow { background: #f2c200; color: #111; } .secs i.red { background: #e10600; color: #fff; }
 .secs i.live { background: #3a4356; color: #fff; } .secs i.old { opacity: .45; }
+/* iPad : pas de bulle « Copier / Chercher / Traduire » ni de sélection de texte quand on appuie longtemps en course */
+.screen.race, .screen.race *, #qbreak, #qbreak *, .rbtn, .tbtn { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent; }
+.screen.race input, .screen.race textarea { -webkit-user-select: text; user-select: text; }
 </style>
 </head>
 <body>
@@ -5277,7 +5280,7 @@ const DISTS = [
   { k: '5', n: '5 tours', f: () => 5 }, { k: '15', n: '15 %', f: L => Math.max(5, Math.round(L * .15)) }, { k: '25', n: '25 %', f: L => Math.max(6, Math.round(L * .25)) },
   { k: '50', n: '50 %', f: L => Math.round(L * .5) }, { k: '100', n: '100 %', f: L => L },
 ];
-const APP_VER = '9 nov. · roues droites';
+const APP_VER = '9 nov. · sans bulle Copier';
 const QFMT = [{ k: 'court', n: 'Courtes', d: [360, 300, 240], h: 'Q1 6 min · Q2 5 min · Q3 4 min' }, { k: 'moyen', n: 'Moyennes', d: [600, 480, 360], h: 'Q1 10 min · Q2 8 min · Q3 6 min' }, { k: 'reel', n: 'Réelles', d: [1080, 900, 720], h: 'Q1 18 min · Q2 15 min · Q3 12 min (comme en vrai)' }];
 const fmtClock = t => { t = Math.max(0, Math.ceil(t)); return Math.floor(t / 60) + ':' + String(t % 60).padStart(2, '0'); };
 const AI_LV = [{ n: 'Facile', off: 5 }, { n: 'Normal', off: 2.2 }, { n: 'Difficile', off: .9 }, { n: 'Légende', off: 0 }];
@@ -6233,6 +6236,9 @@ function engineAudio(r, w, dt) {
   if (matchMedia('(pointer: coarse)').matches) document.body.classList.add('has-touch');
   // iPad : quand un doigt reste sur GAZ ou FREIN, iOS n'envoie plus de « clic » pour un deuxième doigt.
   // On déclenche donc les boutons dès que le doigt les touche.
+  // pas de menu contextuel ni de sélection pendant une course
+  document.addEventListener('contextmenu', e => { if (Game.raf && !/INPUT|TEXTAREA/.test(e.target.tagName)) e.preventDefault(); });
+  document.addEventListener('selectstart', e => { if (Game.raf && !/INPUT|TEXTAREA/.test(e.target.tagName)) e.preventDefault(); });
   document.addEventListener('touchstart', e => {
     if (!Game.raf) return;
     for (const t of e.changedTouches) {
