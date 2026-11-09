@@ -341,6 +341,33 @@ table.std td.r, table.std th.r { text-align: right; }
 .qgo { position: absolute; left: 50%; bottom: 120px; transform: translateX(-50%); z-index: 6; font-size: 20px; padding: 16px 28px; box-shadow: 0 8px 30px rgba(0,0,0,.5); }
 .qgo.pulse { animation: qpulse 1s ease-in-out infinite; }
 @keyframes qpulse { 50% { box-shadow: 0 0 0 10px rgba(225,6,0,.35), 0 8px 30px rgba(0,0,0,.5); } }
+.ersrow { display: flex; align-items: center; gap: 6px; margin-top: 3px; }
+.ersrow .ers { margin-top: 0; width: 110px; }
+.ersk { font-size: 10px; font-weight: 900; letter-spacing: .06em; color: #2BD67B; min-width: 62px; }
+.ersk.boost { color: #ffd400; } .ersk.ovt { color: #ff3df2; } .ersk.harvest { color: #36c2ff; } .ersk.empty { color: #ff2a1f; }
+#ck-batp { font-size: 11px; font-weight: 700; color: #cfd6e2; }
+.ersbtns { display: grid; gap: 4px; margin-left: 6px; }
+.ersbtns .btn { padding: 4px 8px; font-size: 11px; }
+#ck-ovt:not([disabled]) { background: #8a1f86; border-color: #ff3df2; color: #fff; }
+#ck-ovt.on { background: #ff3df2; color: #000; }
+.skipf { position: absolute; top: 64px; left: 50%; transform: translateX(-50%); z-index: 6; }
+.cine-view { position: absolute; inset: 0; }
+.cine-top { position: absolute; top: 18px; left: 50%; transform: translateX(-50%); text-align: center; color: #fff; text-shadow: 0 2px 12px rgba(0,0,0,.7); pointer-events: none; }
+.cine-top b { display: block; font-size: clamp(30px, 6vw, 58px); font-weight: 900; font-style: italic; letter-spacing: .06em; }
+.cine-top .kicker { color: #fff; font-weight: 700; font-size: 15px; display: inline-flex; gap: 8px; align-items: center; }
+.cine-low { position: absolute; left: 16px; bottom: 18px; display: grid; gap: 6px; pointer-events: none; }
+.cine-row { display: grid; grid-template-columns: 34px 5px auto auto auto; gap: 10px; align-items: center; background: rgba(8,10,14,.82); padding: 7px 14px 7px 8px; border-radius: 8px; color: #fff; font-weight: 700; opacity: 0; transform: translateX(-30px); animation: cineIn .5s ease forwards; backdrop-filter: blur(4px); }
+.cine-row .p { font-size: 22px; font-weight: 900; font-style: italic; text-align: center; }
+.cine-row .tb { width: 5px; height: 26px; background: var(--c); border-radius: 2px; }
+.cine-row .nm { font-size: 17px; display: inline-flex; gap: 8px; align-items: center; }
+.cine-row .tm { color: #9aa5b6; font-size: 13px; }
+.cine-row .gp { color: #ffd400; font-size: 13px; }
+@keyframes cineIn { to { opacity: 1; transform: none; } }
+.cine-skip { position: absolute; right: 16px; bottom: 18px; }
+.comm { position: absolute; left: 50%; top: 10px; transform: translate(-50%, -8px); max-width: min(560px, 70%); background: rgba(10,12,18,.84); border-left: 4px solid #ffd400; border-radius: 6px; padding: 6px 12px; color: #fff; font-size: 14px; font-weight: 600; line-height: 1.3; opacity: 0; transition: opacity .25s, transform .25s; pointer-events: none; z-index: 5; }
+.comm.show { opacity: 1; transform: translate(-50%, 0); }
+.comm .lbl { display: flex; align-items: center; gap: 5px; font-size: 10px; font-weight: 900; letter-spacing: .1em; color: #ffd400; margin-bottom: 2px; }
+.tbtn .ic { width: 28px; height: 28px; }
 </style>
 </head>
 <body>
@@ -352,6 +379,7 @@ table.std td.r, table.std th.r { text-align: right; }
 <section id="scr-wall" class="screen race"></section>
 <section id="scr-cockpit" class="screen race"></section>
 <section id="scr-results" class="screen"></section>
+<section id="scr-cine" class="screen race"></section>
 <div class="modal" id="modal"><div class="card" id="modal-card"></div></div>
 <div class="toast" id="toast" role="status"></div>
 <script>
@@ -697,6 +725,9 @@ function tyrePen(c, w) {
 }
 const wearPen = x => x * 0.022 + Math.max(0, x - 62) * 0.11;
 const isWetTyre = c => c === 'I' || c === 'W';
+// ERS (batterie hybride 2026) : puissance électrique selon le mode
+const ERS = { harvest: { n: 'RECHARGE', pf: .955, use: 0 }, normal: { n: 'NORMAL', pf: 1, use: 2.4 }, boost: { n: 'BOOST', pf: 1.045, use: 4.4 }, ovt: { n: 'OVERTAKE', pf: 1.085, use: 7 } };
+const aAccE = (v, pf) => aAcc(v / pf) * pf;
 const idealFor = w => w > .72 ? 'W' : w > .22 ? 'I' : null;
 // Adhérence relative (0..1) selon gomme / piste mouillée — sert au pilotage manuel
 function tyreGrip(c, w) { const p = tyrePen(c, w) - COMP[c].off * 0.3; return clamp(1 - Math.max(0, p) * 0.035, 0.45, 1.03); }
@@ -710,7 +741,7 @@ class Race {
     this.weather = o.weather || { segs: [] };
     this.w = this.rainAt(0); this.rain = this.w; this.wasRain = this.rain > 0;
     this.twoComp = this.session === 'race' && this.laps >= 8;
-    this.t = 0; this.phase = this.session === 'quali' ? 'race' : 'grid'; this.lights = 0; this.lightT = 0; this.goAt = 5 + rand(.3, 2.2);
+    this.t = 0; this.phase = this.session === 'quali' ? 'race' : o.formation ? 'formation' : 'grid'; this.fT = 0; this.lights = 0; this.lightT = 0; this.goAt = 5 + rand(.3, 2.2);
     this.NCP = 40; this.cpLead = []; this.ev = []; this.flag = false; this.finCount = 0; this.fastest = { t: Infinity, c: null };
     this.incidents = o.incidents !== false;
     this.pitUpg = o.pitUpg || 0; this.relUpg = o.relUpg || 0;
@@ -721,6 +752,8 @@ class Race {
     this.rc = { flag: 'green', sector: 0, sc: null, med: null, vsc: false, red: false, drv: {}, lastT: 0 };
     this.tmp = {};
     if (this.session === 'quali') this.qualiInit(o.qdur || [360, 300, 240]);
+    for (const c of this.cars) { c.slot = c.dist; c.d0 = c.d; }
+    if (this.phase === 'formation') { for (const c of this.cars) { c.wasManual = c.manual; c.manual = false; } this.ev.push({ k: 'formstart' }); }
     this.cars.forEach(c => this.placeAI(c));
   }
   /* ---------- QUALIFICATIONS : Q1 / Q2 / Q3 chronométrées, tout le plateau en piste ---------- */
@@ -855,7 +888,7 @@ class Race {
       wTh: rand(58, 72), temps: [92, 92, 92, 92], bat: 100, thr: 0, brk: 0, gear: 1, rpm: 4000, slide: 0,
       fuel: quali ? 8 : this.fuelLap * this.laps + 1, ovT: 0, ovSide: 1, yieldT: 0, yieldSide: 1, blockT: 0,
       trace: new Float32Array(T.N), x: 0, z: 0, y: 0, h: 0, ti: 0, ps: 0, pu: 0, hold: false, letPass: 0, invalid: false,
-      pen: 0, prevPos: gp + 1, steer: 0, offT: 0,
+      pen: 0, prevPos: gp + 1, steer: 0, offT: 0, ers: 'normal', ovtAvail: false, ovtT: 0,
     };
     c.d = (gp % 2 ? -1 : 1) * Math.min(2.4, T.hw - 2);
     const rel = clamp(drv.team.rel + this.relUpg * 0.01, .9, .995);
@@ -869,6 +902,7 @@ class Race {
     let d = c.team.gapEff + c.drv.sk + tyrePen(c.comp, this.w) + wearPen(c.wear) + c.fuel * 0.03 + this.w * 6 + c.noise;
     if (c.mode === 'push') d -= .35; else if (c.mode === 'save') d += .45; else if (c.mode === 'defend') d -= .1;
     if (this.role === 'pilot' && !c.isPlayer) d += this.aiOff;
+    if (c.bat < 4) d += .55; else if (c.ers === 'harvest') d += .25; // batterie vide : plus de puissance électrique
     return this.T.T0 / (this.T.T0 + d);
   }
   wearPerLap(c) {
@@ -998,8 +1032,42 @@ class Race {
     if (this.twoComp && usedDry.length === 1 && usedDry[0] === 'H') return 'M';
     return 'H';
   }
+  // Tour de formation : la file suit le poleman, zigzag pour chauffer les pneus, puis chacun reprend sa place
+  formStep(dt) {
+    const T = this.T, L = T.L; this.fT += dt;
+    const ord = this.cars.slice().sort((a, b) => a.gp - b.gp);
+    ord.forEach((c, k) => {
+      const s = mod(c.dist, L), idx = Math.floor(s / T.ds) % T.N, slot = c.slot + L, rem = slot - c.dist, prog = (c.dist - c.slot) / L;
+      let vt = Math.min(52, Math.min(T.vp[idx], T.vp[(idx + 3) % T.N]) * .62);
+      const a = ord[k - 1];
+      if (a) { const gap = a.dist - c.dist, want = prog > .8 ? Math.min(16, a.slot - c.slot - .3) : 16; vt = Math.min(vt, Math.max(0, a.v + (gap - want) * .6)); if (gap < Math.min(9, want - 1)) vt = Math.min(vt, a.v * .7); }
+      vt = Math.min(vt, Math.sqrt(Math.max(0, 2 * 4.5 * (rem - .2))));
+      if (this.fT < 1 + c.gp * .35) vt = 0;
+      if (vt > c.v) { c.v = Math.min(vt, c.v + aAcc(c.v) * dt * .6); c.thr = .6; c.brk = 0; } else { c.v = Math.max(0, c.v - Math.min(aDec(c.v), (c.v - vt) / dt) * dt); c.thr = 0; c.brk = c.v - vt > 2 ? .4 : 0; }
+      c.dist = Math.min(slot, c.dist + c.v * dt);
+      if (rem < .4 && c.v < .5) c.formDone = true;
+      const weave = prog < .82 && T.vp[idx] > 55 ? Math.sin(this.fT * 1.7 + c.gp) * 2.4 : 0;
+      const dT = prog < .82 ? clamp(T.line[idx] * .4 + weave, -T.hw + 1.4, T.hw - 1.4) : c.d0;
+      const prev = c.d; c.d += clamp(dT - c.d, -2.5 * dt, 2.5 * dt); c.dVel = (c.d - prev) / Math.max(dt, 1e-3);
+      this.placeAI(c);
+      for (let q = 0; q < 4; q++) c.temps[q] += ((weave ? 88 : 80) - c.temps[q]) * Math.min(1, dt * .08);
+      const G = [0, 19, 29, 39, 49, 59, 69, 79, 999]; let g = 1; while (g < 8 && c.v > G[g]) g++; c.gear = c.v < .5 ? 1 : g;
+      c.rpm = c.v < .5 ? 5000 : 6000 + 5000 * clamp((c.v - G[g - 1]) / (G[g] - G[g - 1] || 10), 0, 1);
+    });
+    if (this.cars.every(c => c.formDone || c.dnf) || this.fT > T.T0 * 3) this.endFormation();
+  }
+  endFormation() {
+    for (const c of this.cars) {
+      c.dist = c.slot; c.v = 0; c.d = c.d0; c.dVel = 0; this.placeAI(c);
+      c.started = false; c.lapStart = 0; c.cp = -1; c.lapsDone = 0;
+      if (c.wasManual) { c.manual = true; c.ps = mod(c.dist, this.T.L); }
+    }
+    this.cpLead = []; this.phase = 'grid'; this.lightT = 0; this.lights = 0; this.t = 0;
+    this.ev.push({ k: 'formend' });
+  }
   update(dt, inp) {
     const T = this.T, L = T.L;
+    if (this.phase === 'formation') { this.formStep(dt); return; }
     if (this.phase === 'grid') {
       this.lightT += dt;
       this.lights = Math.min(5, Math.floor(this.lightT - 0.6));
@@ -1138,7 +1206,8 @@ class Race {
     if (this.q && !c.pit) { if (c.qPhase === 'out') vt *= .88; else if (c.qPhase === 'in') vt *= .86; }
     if (this.phase !== 'race') vt = 0;
     // dynamique longitudinale
-    if (vt > c.v) { c.v = Math.min(vt, c.v + aAcc(c.v) * dt * 1.05); c.thr = 1; c.brk = 0; }
+    if (!c.pit && T.vp[idx] > 70) vt *= 1 + (((c.bat <= .5 ? .9 : (ERS[c.ers] || ERS.normal).pf)) - 1) * .5;
+    if (vt > c.v) { c.v = Math.min(vt, c.v + aAccE(c.v, c.bat <= .5 ? .9 : (ERS[c.ers] || ERS.normal).pf) * dt * 1.05); c.thr = 1; c.brk = 0; }
     else { const dec = Math.min(aDec(c.v) * 1.1, (c.v - vt) / dt); c.v = Math.max(0, c.v - dec * dt); c.thr = (vt > c.v - .5) ? .6 : 0; c.brk = dec > 6 ? clamp(dec / 45, 0, 1) : 0; }
     c.dist += c.v * dt;
     // anti-chevauchement
@@ -1193,7 +1262,8 @@ class Race {
     }
     // filtrage : pas d'à-coups dans le volant (réponse en ~0,08 s)
     c.stF = (c.stF ?? st) + (st - (c.stF ?? st)) * Math.min(1, dt * 12); st = c.stF;
-    let a = thr * aAcc(c.v) * (off ? .5 : 1) - brk * aDec(c.v) * Math.min(1, g * 1.05) - (off ? 3 + c.v * .06 : 0) - (thr < .05 && brk < .05 ? .8 + c.v * .02 : 0);
+    const pf = c.bat <= .5 ? .9 : (ERS[c.ers] || ERS.normal).pf;
+    let a = thr * aAccE(c.v, pf) * (off ? .5 : 1) - brk * aDec(c.v) * Math.min(1, g * 1.05) - (off ? 3 + c.v * .06 : 0) - (thr < .05 && brk < .05 ? .8 + c.v * .02 : 0);
     c.v = Math.max(0, c.v + a * dt);
     if (c.fin) c.v = Math.min(c.v, 45);
     let r = c.v * Math.tan(st * maxSt) / 3.6;
@@ -1244,8 +1314,7 @@ class Race {
     const lr = clamp(kk / 30, -1, 1) * 12;
     const tg = [base + 5 + lr + c.brk * 8, base + 5 - lr + c.brk * 8, base + lr * .6 + c.thr * 4, base - lr * .6 + c.thr * 4];
     for (let q = 0; q < 4; q++) c.temps[q] += (tg[q] + (Math.random() - .5) * 3 - c.temps[q]) * Math.min(1, dt * .35);
-    // batterie (déploiement en ligne droite, récupération au freinage)
-    c.bat = clamp(c.bat + (c.brk > .1 ? 9 : c.thr > .9 && c.v > 60 ? (c.mode === 'push' ? -3.6 : -2.2) : .5) * dt, 0, 100);
+    this.ersStep(c, dt);
     const G = [0, 19, 29, 39, 49, 59, 69, 79, 999];
     let g = 1; while (g < 8 && c.v > G[g]) g++;
     c.gear = c.v < .5 && this.phase === 'race' && !c.isPlayer ? (c.pit ? 1 : c.gear) : g;
@@ -1277,6 +1346,28 @@ class Race {
     const cpN = Math.floor(c.dist / (L / this.NCP));
     if (cpN > c.cp) { c.cp = cpN; if (cpN >= 0) { if (this.cpLead[cpN] === undefined) this.cpLead[cpN] = this.t; c.gap = this.t - this.cpLead[cpN]; } }
     if (c.dist > c.dnfAt && !c.fin) { c.dnf = true; c.dnfLap = c.lapsDone; this.ev.push({ k: 'dnf', c }); }
+  }
+  // ERS : déploiement en accélération, récupération au freinage et en mode recharge
+  ersStep(c, dt) {
+    if (!c.manual) this.ersAI(c, dt);
+    const E = ERS[c.ers] || ERS.normal, dep = c.thr > .8 && c.v > 28;
+    let d = c.brk > .1 ? 10 : dep ? (c.ers === 'harvest' ? 1.4 : -E.use * (c.mode === 'push' && c.ers === 'normal' ? 1.3 : 1)) : c.thr < .2 ? 2.2 : .4;
+    c.bat = clamp(c.bat + d * dt, 0, 100);
+    if (c.ers === 'ovt') { c.ovtT -= dt; if (c.ovtT <= 0 || c.bat <= 0) c.ers = 'normal'; }
+    // overtake disponible à moins d'une seconde de la voiture de devant (règle 2026)
+    const a = c.aheadRun; c.ovtAvail = !!(a && this.session === 'race' && this.phase === 'race' && !c.pit && (a.dist - c.dist) < Math.max(c.v, 20) * 1.0 && a.dist > c.dist && !(this.rc && (this.rc.flag !== 'green' || this.rc.vsc)));
+  }
+  ersAI(c, dt) {
+    c.ersT = (c.ersT || 0) - dt; if (c.ersT > 0) return; c.ersT = .5;
+    if (c.ers === 'ovt' || c.ersHold > this.t) return;
+    if (c.bat < 12) c.ers = 'harvest';
+    else if (c.ers === 'harvest' && c.bat < 45) return;
+    else if (c.ovtAvail && c.ovT > 0 && c.bat > 30) { c.ers = 'ovt'; c.ovtT = 6; }
+    else c.ers = c.mode === 'push' || (this.q && c.qPhase === 'push') ? 'boost' : c.mode === 'save' ? 'harvest' : 'normal';
+  }
+  setERS(c, k) {
+    if (k === 'ovt') { if (!c.ovtAvail || c.bat < 8) return false; c.ovtT = 8; }
+    c.ers = k; this.ev.push({ k: 'ers', c, m: k }); return true;
   }
   strategy(c) {
     const left = this.laps - c.lapsDone;
@@ -2303,6 +2394,7 @@ class World {
     this.lights.forEach((l, k) => l.material.color.copy(k < lit ? this.cRed : this.cOff));
     this.setWeather(r.w, r.rain);
     this.syncFlags();
+    if (this.updateCrew) this.updateCrew(dt);
   }
   // ---- caméras ----
   camState(key) {
@@ -2324,6 +2416,7 @@ class World {
   }
   focus(c, secs = 20) { this.tv.target = c; this.tv.force = secs; this.tv.cam = -1; }
   placeCam(st, spec, dt, aspect) {
+    if (spec.type === 'podium' && this.pod) return this.podiumCam(st, dt, aspect);
     const cam = st.cam, c = spec.car || this.tv.target || this.race.order[0];
     const m = this.cars.get(c); if (!m) return null;
     const g = m.g, v = this.v1, lk = this.v2;
@@ -3029,7 +3122,7 @@ Object.assign(World.prototype, {
     TEAMS.forEach((t, ti) => {
       const u = T.box0 + ti * 20;
       for (let k = 0; k < 9; k++) {
-        const inside = k >= 6, off = T.pitSide * (inside ? T.pitOff + 7 + (k % 3) * 1.5 : T.pitOff + 2.6 + (k % 2) * .9), q = trackPoint(T, L - T.pitIn + u + (inside ? -4 + (k - 6) * 4 : -5 + (k % 3) * 4 + (k > 2 ? 1.5 : 0)), off, {});
+        const inside = k >= 6, off = T.pitSide * (inside ? T.pitOff + 7 + (k % 3) * 1.5 : T.pitOff + 5.4 + (k % 2) * .9), q = trackPoint(T, L - T.pitIn + u + (inside ? -4 + (k - 6) * 4 : -5 + (k % 3) * 4 + (k > 2 ? 1.5 : 0)), off, {});
         people.push({ x: q.x, y: q.y, z: q.z, h: q.h - Math.PI / 2 * T.pitSide + (Math.random() - .5), color: k === 0 ? '#ffffff' : t.color });
       }
     });
@@ -3076,6 +3169,244 @@ Object.assign(World.prototype, {
 });
 
 /* =====================================================================
+   CÉRÉMONIE DU PODIUM — après l'arrivée : podium sur la ligne droite,
+   pilotes qui sautent, champagne, confettis, voitures garées devant
+   ===================================================================== */
+function makeFigure(col, opts = {}) {
+  const g = new THREE.Group(), M = c => new THREE.MeshStandardMaterial({ color: new THREE.Color(c).convertSRGBToLinear(), roughness: .7 });
+  const suit = M(col), dark = M('#1b1d22'), skin = M(opts.skin || '#d9a77f');
+  const box = (w, h, d, m, x, y, z, par = g) => { const b = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m); b.position.set(x, y, z); b.castShadow = true; par.add(b); return b; };
+  box(.17, .82, .2, opts.legs ? M(opts.legs) : suit, -.11, .41, 0); box(.17, .82, .2, opts.legs ? M(opts.legs) : suit, .11, .41, 0);
+  box(.44, .62, .26, suit, 0, 1.13, 0);
+  const head = new THREE.Mesh(new THREE.SphereGeometry(.15, 12, 10), skin); head.position.set(0, 1.62, 0); g.add(head);
+  const cap = new THREE.Mesh(new THREE.SphereGeometry(.155, 12, 6, 0, Math.PI * 2, 0, Math.PI / 2), opts.cap ? M(opts.cap) : suit); cap.position.set(0, 1.64, 0); g.add(cap);
+  const arm = sx => { const p = new THREE.Group(); p.position.set(sx * .29, 1.4, 0); g.add(p); box(.13, .6, .14, suit, 0, -.28, 0, p); box(.12, .1, .12, skin, 0, -.62, 0, p); return p; };
+  g.userData.armL = arm(-1); g.userData.armR = arm(1); g.userData.dark = dark;
+  return g;
+}
+function cupMesh(color = '#d4af37') {
+  const pts = [[0, 0], [.09, 0], [.09, .02], [.03, .05], [.025, .16], [.11, .26], [.13, .4], [.12, .42], [0, .3]].map(p => new THREE.Vector2(p[0], p[1]));
+  return new THREE.Mesh(new THREE.LatheGeometry(pts, 20), new THREE.MeshStandardMaterial({ color: new THREE.Color(color).convertSRGBToLinear(), metalness: .9, roughness: .25, side: THREE.DoubleSide }));
+}
+Object.assign(World.prototype, {
+  buildPodium(rows) {
+    const T = this.T, s0 = 45, i = Math.round(s0 / T.ds) % T.N, g = -T.pitSide;
+    const B = trackPoint(T, s0, T.pitSide * 1.5, {}), fx = T.nx[i] * g, fz = T.nz[i] * g;
+    const G = new THREE.Group(); G.position.set(B.x, B.y, B.z); G.rotation.y = Math.atan2(fx, fz); this.scene.add(G); G.updateMatrixWorld();
+    const top = rows.filter(x => !x.dnf).slice(0, 3);
+    const MS = (c, o = {}) => new THREE.MeshStandardMaterial(Object.assign({ color: new THREE.Color(c).convertSRGBToLinear(), roughness: .5 }, o));
+    // marches
+    const H = [1.25, .85, .6], X = [0, -2.35, 2.35], medal = ['#d4af37', '#c0c4ca', '#cd7f32'];
+    H.forEach((h, k) => {
+      const b = new THREE.Mesh(new THREE.BoxGeometry(2.3, h, 2.2), MS('#f2f3f5')); b.position.set(X[k], h / 2, 0); b.castShadow = b.receiveShadow = true; G.add(b);
+      const tex = canvasTex(256, 128, (cg, w, hh) => { cg.fillStyle = medal[k]; cg.fillRect(0, 0, w, hh); cg.fillStyle = '#111'; cg.font = '900 96px Titillium Web, Arial, sans-serif'; cg.textAlign = 'center'; cg.textBaseline = 'middle'; cg.fillText(String(k + 1), w / 2, hh / 2 + 6); });
+      tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping; tex.encoding = THREE.sRGBEncoding;
+      const p = new THREE.Mesh(new THREE.PlaneGeometry(1.4, Math.min(.7, h * .8)), new THREE.MeshBasicMaterial({ map: tex })); p.position.set(X[k], h / 2, 1.105); G.add(p);
+    });
+    // estrade et fond aux couleurs du Grand Prix
+    const st = new THREE.Mesh(new THREE.BoxGeometry(9.5, .18, 4), MS('#20232a')); st.position.set(0, .09, -.4); st.receiveShadow = true; G.add(st);
+    const def = TRACKS[Game.wk.gp], bt = canvasTex(1024, 384, (cg, w, h) => {
+      const gr = cg.createLinearGradient(0, 0, w, h); gr.addColorStop(0, '#0b0e14'); gr.addColorStop(1, '#2a0508'); cg.fillStyle = gr; cg.fillRect(0, 0, w, h);
+      cg.fillStyle = '#E10600'; cg.fillRect(0, h - 40, w, 40);
+      for (let k = 0; k < 14; k++) { cg.fillStyle = k % 2 ? 'rgba(255,255,255,.05)' : 'rgba(255,255,255,.1)'; cg.fillRect(k * 80, 0, 40, h - 40); }
+      cg.fillStyle = '#fff'; cg.textAlign = 'center'; cg.font = 'italic 900 70px Titillium Web, Arial, sans-serif'; cg.fillText('GRAND PRIX', w / 2, 120);
+      cg.font = 'italic 900 92px Titillium Web, Arial, sans-serif'; cg.fillText(def.gp.toUpperCase(), w / 2, 230);
+      cg.font = '700 40px Titillium Web, Arial, sans-serif'; cg.fillStyle = '#ffd400'; cg.fillText('PODIUM ' + new Date().getFullYear(), w / 2, 300);
+    });
+    bt.wrapS = bt.wrapT = THREE.ClampToEdgeWrapping; bt.encoding = THREE.sRGBEncoding;
+    const back = new THREE.Mesh(new THREE.PlaneGeometry(11, 4.1), new THREE.MeshBasicMaterial({ map: bt })); back.position.set(0, 3.6, -2.4); G.add(back);
+    for (const sx of [-1, 1]) { const p = new THREE.Mesh(new THREE.BoxGeometry(.3, 5.8, .3), MS('#30343c', { metalness: .6 })); p.position.set(sx * 5.6, 2.9, -2.45); G.add(p); }
+    // pilotes : combinaison et casquette aux couleurs de l'écurie, coupe pour le vainqueur
+    const figs = top.map((x, k) => {
+      const f = makeFigure(x.c.team.color, { cap: x.c.team.acc || '#111' }); f.position.set(X[k], H[k], .1); G.add(f);
+      const cup = cupMesh(medal[k]); cup.scale.setScalar(k ? .8 : 1.2); f.add(cup); cup.position.set(-.34, 1.0, .25);
+      const bottle = new THREE.Mesh(new THREE.CylinderGeometry(.05, .06, .38, 10), MS('#1e5a2e', { metalness: .3 })); bottle.visible = false; f.userData.armR.add(bottle); bottle.position.set(0, -.72, .12); bottle.rotation.x = Math.PI;
+      return { f, cup, bottle, k, base: H[k] };
+    });
+    // les trois voitures garées devant le podium
+    const lw = new THREE.Vector3();
+    top.forEach((x, k) => {
+      const m = this.cars.get(x.c); if (!m) return;
+      lw.set([0, -6.2, 6.2][k], 0, [8.5, 7.4, 7.4][k]); G.localToWorld(lw);
+      x.c.x = lw.x; x.c.z = lw.z; x.c.y = B.y; x.c.h = Math.atan2(-fx, -fz) + [0, .35, -.35][k]; x.c.v = 0; x.c.d = 0; x.c.steer = 0;
+    });
+    for (const [c, m] of this.cars) m.g.visible = top.some(x => x.c === c);
+    // confettis et champagne (particules)
+    const mkPts = (n, size, colors) => {
+      const geo = new THREE.BufferGeometry(), pos = new Float32Array(n * 3), col = new Float32Array(n * 3);
+      for (let q = 0; q < n; q++) { const cc = new THREE.Color(pick(colors)); col.set([cc.r, cc.g, cc.b], q * 3); pos[q * 3 + 1] = -100; }
+      geo.setAttribute('position', new THREE.BufferAttribute(pos, 3)); geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+      const p = new THREE.Points(geo, new THREE.PointsMaterial({ size, vertexColors: true, transparent: true, opacity: .95, depthWrite: false })); p.frustumCulled = false; G.add(p); return p;
+    };
+    const conf = mkPts(this.Q >= 2 ? 1000 : 500, .1, ['#E10600', '#ffffff', '#ffd400', '#1e88ff', '#2BD67B', top[0] ? top[0].c.team.color : '#fff']);
+    const vel = new Float32Array(conf.geometry.attributes.position.count * 3);
+    const foam = mkPts(700, .12, ['#fff7d6', '#fff2b0', '#ffffff']), fvel = new Float32Array(700 * 3), flife = new Float32Array(700);
+    this.pod = { G, figs, conf, vel, foam, fvel, flife, fi: 0, t: 0, top, H, X };
+    return this.pod;
+  },
+  stepPodium(dt) {
+    const P = this.pod; if (!P) return; P.t += dt; const t = P.t;
+    // confettis : grande gerbe au départ, puis pluie continue
+    const cp = P.conf.geometry.attributes.position, a = cp.array, v = P.vel, n = cp.count;
+    for (let q = 0; q < n; q++) {
+      const o = q * 3;
+      if (a[o + 1] < -1 && (t > 1.5 + (q / n) * 2.5)) { a[o] = rand(-8, 8); a[o + 1] = rand(7, 13); a[o + 2] = rand(-3, 7); v[o] = rand(-.6, .6); v[o + 1] = -rand(.8, 1.6); v[o + 2] = rand(-.4, .4); }
+      if (a[o + 1] > -1) { a[o] += (v[o] + Math.sin(t * 2 + q) * .5) * dt; a[o + 1] += v[o + 1] * dt; a[o + 2] += v[o + 2] * dt; if (a[o + 1] < 0) a[o + 1] = t < 14 ? -2 : -50; }
+    }
+    cp.needsUpdate = true;
+    // pilotes : sauts de joie, bras levés, puis champagne
+    for (const F of P.figs) {
+      const f = F.f, ud = f.userData, ph = F.k * 1.3;
+      const jump = t > 2 && t < 6 ? Math.max(0, Math.sin((t - 2) * 6 + ph)) * (F.k ? .25 : .45) : 0;
+      f.position.y = F.base + jump;
+      const up = t > 1.5 ? Math.min(1, (t - 1.5) * 2) : 0;
+      ud.armL.rotation.z = -up * 2.6 + (t > 6 ? .4 * Math.sin(t * 3 + ph) : 0); ud.armR.rotation.z = up * (t > 6.5 ? 2.0 : 2.6);
+      F.cup.position.set(-.34 - up * .1, 1.0 + up * .95, .25 - up * .1);
+      F.bottle.visible = t > 6.5; F.cup.visible = t < 6.5 || F.k === 0;
+      if (t > 6.5) { ud.armR.rotation.x = -.6 + Math.sin(t * 8 + ph) * .25; f.rotation.y = Math.sin(t * .9 + ph) * .7; }
+    }
+    // champagne : jets de mousse depuis la bouteille de chaque pilote
+    const fp = P.foam.geometry.attributes.position, fa = fp.array, fv = P.fvel, fl = P.flife, wp = new THREE.Vector3();
+    if (t > 7 && t < 22) for (const F of P.figs) for (let e = 0; e < 7; e++) {
+      const q = P.fi = (P.fi + 1) % fl.length, o = q * 3;
+      F.bottle.getWorldPosition(wp); P.G.worldToLocal(wp);
+      fa[o] = wp.x; fa[o + 1] = wp.y + .1; fa[o + 2] = wp.z;
+      const yaw = F.f.rotation.y + rand(-.35, .35), sp = rand(4, 7.5);
+      fv[o] = Math.sin(yaw) * sp * .7 + (F.k === 1 ? 2 : F.k === 2 ? -2 : 0); fv[o + 1] = rand(2.5, 5); fv[o + 2] = Math.cos(yaw) * sp * .7; fl[q] = rand(.8, 1.4);
+    }
+    for (let q = 0; q < fl.length; q++) {
+      if (fl[q] <= 0) continue; const o = q * 3; fl[q] -= dt;
+      fv[o + 1] -= 9 * dt; fa[o] += fv[o] * dt; fa[o + 1] += fv[o + 1] * dt; fa[o + 2] += fv[o + 2] * dt;
+      if (fl[q] <= 0 || fa[o + 1] < 0) { fl[q] = 0; fa[o + 1] = -100; }
+    }
+    fp.needsUpdate = true;
+  },
+  // plan de caméra « réalisation TV » autour du podium
+  podiumCam(st, dt, aspect) {
+    const P = this.pod, cam = st.cam, t = P.t, G = P.G, v = this.v1, lk = this.v2;
+    const L = (x, y, z, out) => out.set(x, y, z).applyMatrix4(G.matrixWorld);
+    let fov = 50, k;
+    if (t < 5) { k = smooth(0, 5, t); L(lerp(-14, 0, k), lerp(30, 5.5, k), lerp(48, 15, k), v); L(0, 2.4, 0, lk); }
+    else if (t < 11) { const a = -.7 + (t - 5) * .23; L(Math.sin(a) * 12, 4.2, Math.cos(a) * 12, v); L(0, 2.6, 0, lk); }
+    else if (t < 16) { k = smooth(11, 16, t); L(lerp(3, 1.6, k), lerp(3.2, 2.9, k), lerp(6.5, 4.4, k), v); L(0, H0(P) + 1.5, 0, lk); fov = 42; }
+    else if (t < 21) { k = (t - 16) / 5; L(lerp(-9, 9, k), 2, 13, v); L(0, 1.6, 6, lk); fov = 46; }
+    else { const a = (t - 21) * .15; L(Math.sin(a) * 16, 6 + Math.sin(t * .3) * 2, Math.cos(a) * 16, v); L(0, 2.2, 0, lk); }
+    cam.position.copy(v); cam.lookAt(lk); cam.near = .1; cam.fov = fov; cam.aspect = aspect; cam.updateProjectionMatrix();
+    return P.top[0] ? P.top[0].c : null;
+    function H0(P) { return P.H[0]; }
+  },
+});
+
+/* --- déroulé de la cérémonie (écran plein, bouton pour passer) --- */
+function startPodium(rows, done) {
+  const w = Game.world, top = rows.filter(x => !x.dnf).slice(0, 3);
+  if (!w || top.length < 1) return done();
+  try { w.buildPodium(rows); } catch (e) { console.warn('podium', e); return done(); }
+  Game.paused = true; Game.cine = { t: 0, done }; Sfx.engineOff(); Sfx.hiss(false); Speech.stop(); Sfx.cheer && Sfx.cheer();
+  const el = $('#scr-cine'), def = TRACKS[Game.wk.gp];
+  el.innerHTML = `<div class="cine-view" id="cine-view"></div>
+    <div class="cine-top"><span class="kicker">${flagSVG(def.flag)} ${esc(gpName(def))}</span><b>PODIUM</b></div>
+    <div class="cine-low">${top.map((x, k) => `<div class="cine-row" style="--c:${x.c.team.color};animation-delay:${2 + k * .5}s"><span class="p">${k + 1}</span><span class="tb"></span><span class="nm">${flagSVG(x.c.drv.nat)} ${esc(x.c.drv.name)}</span><span class="tm">${esc(x.c.team.name)}</span><span class="gp num">${esc(x.gapTxt)}</span></div>`).join('')}</div>
+    <button class="btn primary cine-skip" id="cine-skip">Résultats ${ic('right')}</button>`;
+  show('scr-cine');
+  Game.views = [{ el: $('#cine-view'), key: 'podium', spec: { type: 'podium' } }];
+  const end = () => { if (!Game.cine) return; const d = Game.cine.done; Game.cine = null; w.pod = null; d(); };
+  $('#cine-skip').onclick = end;
+  Game.cine.end = end;
+  // la radio et le commentateur saluent le vainqueur
+  const win = top[0].c;
+  if (typeof Comm !== 'undefined') Comm.podium(top);
+  else if (win.team === Game.team) Brain.drv(win, 'On a gagné ! Quelle journée, merci à toute l\'équipe !');
+}
+
+/* =====================================================================
+   MÉCANICIENS AUX ARRÊTS — une équipe s'anime autour de la voiture :
+   crics avant/arrière, pistolets, pneus usés retirés, pneus neufs posés
+   ===================================================================== */
+const CREW_GEO = {};
+function crewGeo(color, crouch) {
+  const key = color + (crouch ? 'c' : 's'); if (CREW_GEO[key]) return CREW_GEO[key];
+  const parts = crouch
+    ? [[.18, .42, .22, -.12, .21, 0, '#1b1d22'], [.18, .42, .22, .12, .21, 0, '#1b1d22'], [.46, .58, .3, 0, .72, .05, color], [.26, .28, .28, 0, 1.13, .12, '#f2f2f2'], [.12, .45, .14, -.3, .72, .2, color], [.12, .45, .14, .3, .72, .2, color]]
+    : [[.18, .8, .22, -.12, .4, 0, '#1b1d22'], [.18, .8, .22, .12, .4, 0, '#1b1d22'], [.46, .62, .3, 0, 1.11, 0, color], [.27, .29, .29, 0, 1.6, 0, '#f2f2f2'], [.13, .58, .14, -.31, 1.1, .05, color], [.13, .58, .14, .31, 1.1, .05, color]];
+  const pos = [], col = [], idx = []; let base = 0;
+  for (const [w, h, d, x, y, z, c] of parts) {
+    const b = new THREE.BoxGeometry(w, h, d); b.translate(x, y, z);
+    const cc = new THREE.Color(c).convertSRGBToLinear(), p = b.attributes.position.array;
+    for (let i = 0; i < p.length; i += 3) { pos.push(p[i], p[i + 1], p[i + 2]); col.push(cc.r, cc.g, cc.b); }
+    for (const i of b.index.array) idx.push(i + base); base += p.length / 3;
+  }
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3)); g.setIndex(idx); g.computeVertexNormals(); g.userData.lin = true;
+  return CREW_GEO[key] = g;
+}
+Object.assign(World.prototype, {
+  makeSquad() {
+    const g = new THREE.Group(); g.visible = false; this.scene.add(g);
+    const mat = this.crewMat || (this.crewMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .75 }));
+    const tyreG = this.tyreG || (this.tyreG = new THREE.CylinderGeometry(.36, .36, .38, 14).rotateZ(Math.PI / 2));
+    const tyreM = this.tyreM || (this.tyreM = new THREE.MeshStandardMaterial({ color: 0x111113, roughness: .9 }));
+    const men = [], add = (x, z, ry, role, k) => { const m = new THREE.Mesh(crewGeo('#888888', false), mat); m.position.set(x, 0, z); m.rotation.y = ry; m.castShadow = this.Q >= 2; g.add(m); men.push({ m, x, z, ry, role, k }); return m; };
+    const W = [[.78, 1.7], [-.78, 1.7], [.76, -1.7], [-.76, -1.7]];
+    W.forEach(([x, z], k) => {
+      const s = Math.sign(x);
+      add(x + s * .75, z, -s * Math.PI / 2, 'gun', k);                 // pistolet
+      add(x + s * 1.25, z + .55, -s * Math.PI / 2, 'off', k);         // retire le pneu usé
+      add(x + s * 1.35, z - .6, -s * Math.PI / 2, 'on', k);           // apporte le pneu neuf
+    });
+    add(0, 3.75, Math.PI, 'jack', 0); add(0, -3.45, 0, 'jack', 1); add(1.9, 3.3, Math.PI * .8, 'light', 0);
+    const old = W.map(() => { const t = new THREE.Mesh(tyreG, tyreM); t.visible = false; g.add(t); return t; });
+    const nw = W.map(() => { const t = new THREE.Mesh(tyreG, tyreM); t.visible = false; g.add(t); return t; });
+    const jackG = new THREE.BoxGeometry(.12, .12, 1.3), jm = new THREE.MeshStandardMaterial({ color: 0xd0d4da, metalness: .7, roughness: .3 });
+    const jacks = [new THREE.Mesh(jackG, jm), new THREE.Mesh(jackG, jm)]; jacks[0].position.set(0, .35, 3.0); jacks[1].position.set(0, .35, -2.75); jacks.forEach(j => g.add(j));
+    const light = new THREE.Mesh(new THREE.BoxGeometry(.5, .5, .05), new THREE.MeshBasicMaterial({ color: 0xff2a1f })); light.position.set(1.9, 2.1, 3.0); g.add(light);
+    return { g, men, old, nw, W, light, car: null, color: null };
+  },
+  updateCrew(dt) {
+    const r = this.race; if (r.q || this.Q < 1) return;
+    const T = this.T, L = T.L;
+    if (!this.squads) { this.squads = []; this.crewOf = new WeakMap(); }
+    // affecter une équipe à chaque voiture qui arrive à son emplacement
+    for (const c of r.cars) {
+      const P = c.pit; if (!P || P.garage || P.box == null) continue;
+      const u = mod(mod(c.dist, L) - (L - T.pitIn), L);
+      if (!this.crewOf.has(P) && !P.done && u > P.box - 70 && u < P.box + 2) {
+        let S = this.squads.find(s => !s.car); if (!S && this.squads.length < 4) { S = this.makeSquad(); this.squads.push(S); }
+        if (S) { S.car = c; S.P = P; S.t = 0; this.crewOf.set(P, S); }
+      }
+    }
+    for (const S of this.squads) {
+      const c = S.car; if (!c) continue;
+      const P = S.P, m = this.cars.get(c);
+      if (c.pit !== P && (S.after = (S.after || 0) + dt) > 2.5 || !m) { S.car = null; S.after = 0; S.g.visible = false; if (m) m.wheels.forEach(w => w.w.visible = true); continue; }
+      S.g.visible = true;
+      if (S.color !== c.team.color) { S.color = c.team.color; for (const k of S.men) k.m.geometry = crewGeo(k.role === 'light' ? '#ffffff' : c.team.color, false); }
+      const q = trackPoint(T, L - T.pitIn + P.box, pitLat(T, P.box), {});
+      S.g.position.set(q.x, q.y, q.z); S.g.rotation.y = q.h;
+      const st = P.t > 0 || P.done ? (P.done ? P.dur + (S.t += dt) : P.t) : -1, D = P.dur;
+      // phases : 0 → cric, .12 → pneus retirés, .45 → pneus neufs, .8 → cric abaissé
+      const f = st < 0 ? -1 : st / D, off = clamp((f - .1) / .25, 0, 1), on = clamp((f - .42) / .3, 0, 1), up = st < 0 ? 0 : f < .85 ? Math.min(1, st / .25) : clamp(1 - (f - .85) / .15, 0, 1);
+      if (m && st >= 0 && !P.done) { m.g.position.y += up * .07; m.wheels.forEach(w => w.w.visible = off < 1 || on >= 1); }
+      else if (m) m.wheels.forEach(w => w.w.visible = true);
+      for (const k of S.men) {
+        const crouch = st >= 0 && f < 1 && (k.role === 'gun' || k.role === 'jack');
+        k.m.geometry = crewGeo(k.role === 'light' ? '#ffffff' : c.team.color, crouch);
+        const [wx, wz] = k.role === 'jack' || k.role === 'light' ? [0, 0] : S.W[k.k], s = Math.sign(wx);
+        if (k.role === 'off') k.m.position.set(k.x + s * off * .6, 0, k.z + off * .2);
+        else if (k.role === 'on') k.m.position.set(k.x - s * on * .4, 0, k.z + on * .5);
+        else if (P.done && k.role === 'jack') k.m.position.set(k.x + clamp(S.t, 0, 1) * 1.5, 0, k.z);
+        else k.m.position.set(k.x, 0, k.z);
+      }
+      S.W.forEach(([wx, wz], k) => {
+        const s = Math.sign(wx), o = S.old[k], n = S.nw[k];
+        o.visible = st >= 0 && off > 0; o.position.set(wx + s * (off * 1.25), .36 + up * .07, wz + off * .55);
+        n.visible = st >= 0 && on < 1 && !P.done; n.position.set(wx + s * (1 - on) * 1.0, .36 + up * .07, wz - (1 - on) * .1);
+      });
+      S.light.material.color.setHex(P.done ? 0x2bd67b : 0xff2a1f);
+    }
+  },
+});
+
+/* =====================================================================
    SON : bips radio, grésillement, moteur (Web Audio)
    ===================================================================== */
 const Sfx = {
@@ -3104,39 +3435,95 @@ const Sfx = {
   ducked: false,
   duck(on) { this.ducked = on; },
   hiss(on) { if (this.nGain) this.nGain.gain.setTargetAtTime(on ? .018 : 0, this.ctx.currentTime, .05); },
-  // Moteur V6 turbo synthétisé : harmoniques en dents de scie, saturation, filtre, sifflement du turbo,
-  // + crissement des pneus et bruit de pluie
+  // Moteur V6 turbo hybride synthétisé : harmoniques du vilebrequin, « grain » de combustion (bruit modulé
+  // à la fréquence d'allumage), sifflement du turbo, coupure au passage des rapports, pétarades au lever de pied.
+  // Deux voix : la voiture suivie + la voiture la plus proche (effet Doppler quand elle passe).
+  noiseBuf() { if (this._nb) return this._nb; const ctx = this.ctx, b = ctx.createBuffer(1, ctx.sampleRate * 2, ctx.sampleRate), d = b.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1; return this._nb = b; },
+  voice(dest) {
+    const ctx = this.ctx, out = ctx.createGain(); out.gain.value = 0; out.connect(dest);
+    const shaper = ctx.createWaveShaper(), curve = new Float32Array(2048);
+    for (let i = 0; i < 2048; i++) { const x = i / 1024 - 1; curve[i] = Math.tanh(x * 3.2) * .9 + x * .1; }
+    shaper.curve = curve; shaper.oversample = '2x';
+    const pre = ctx.createGain(); pre.gain.value = .45;
+    const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 2200; lp.Q.value = .9;
+    const body = ctx.createBiquadFilter(); body.type = 'peaking'; body.frequency.value = 650; body.Q.value = 1.4; body.gain.value = 5;
+    const hiss = ctx.createBiquadFilter(); hiss.type = 'highshelf'; hiss.frequency.value = 3500; hiss.gain.value = -6;
+    const shift = ctx.createGain(); shift.gain.value = 1;
+    pre.connect(shaper).connect(lp).connect(body).connect(hiss).connect(shift).connect(out);
+    const osc = (type, g) => { const o = ctx.createOscillator(), gg = ctx.createGain(); o.type = type; gg.gain.value = g; o.connect(gg).connect(pre); o.start(); return o; };
+    // ordres moteur d'un V6 : allumage (×3 du régime), demi-ordre, harmoniques
+    const o = [osc('sawtooth', .55), osc('sawtooth', .3), osc('square', .18), osc('triangle', .25), osc('sawtooth', .12)];
+    // grain de combustion : bruit filtré dont l'amplitude bat à la fréquence d'allumage
+    const nz = ctx.createBufferSource(); nz.buffer = this.noiseBuf(); nz.loop = true;
+    const nbp = ctx.createBiquadFilter(); nbp.type = 'bandpass'; nbp.Q.value = 1.2;
+    const am = ctx.createGain(); am.gain.value = .0;
+    const lfo = ctx.createOscillator(); lfo.type = 'sine'; const lfoG = ctx.createGain(); lfoG.gain.value = .5; lfo.connect(lfoG).connect(am.gain); lfo.start();
+    const rasp = ctx.createGain(); rasp.gain.value = .5;
+    nz.connect(nbp).connect(am).connect(rasp).connect(shift); nz.start();
+    // turbo + MGU-H
+    const tb = ctx.createOscillator(), tg = ctx.createGain(); tb.type = 'sine'; tg.gain.value = 0; tb.connect(tg).connect(out); tb.start();
+    // pétarades au lever de pied
+    const pop = ctx.createGain(); pop.gain.value = 0; const pbp = ctx.createBiquadFilter(); pbp.type = 'bandpass'; pbp.frequency.value = 900; pbp.Q.value = .8;
+    const pn = ctx.createBufferSource(); pn.buffer = this.noiseBuf(); pn.loop = true; pn.loopStart = .5; pn.connect(pbp).connect(pop).connect(out); pn.start();
+    return { out, o, lfo, nbp, am, lp, tb, tg, shift, pop, nz, pn, gear: 0, rpm: 0, popT: 0 };
+  },
+  setVoice(e, rpm, thr, vol, pitch, gear) {
+    const ctx = this.ctx, t = ctx.currentTime;
+    const f = Math.max(25, rpm / 60 * 3 * pitch);
+    const mul = [1, .5, 1.5, 2, 3];
+    e.o.forEach((o, k) => o.frequency.setTargetAtTime(f * mul[k] * (k === 3 ? 1.003 : 1), t, .015));
+    e.lfo.frequency.setTargetAtTime(f, t, .015);
+    e.nbp.frequency.setTargetAtTime(Math.min(6000, f * 3.2), t, .03);
+    e.am.gain.setTargetAtTime(.25 + thr * .35, t, .05);
+    e.lp.frequency.setTargetAtTime(900 + thr * 3200 + rpm * .08, t, .04);
+    e.tb.frequency.setTargetAtTime((2600 + rpm * .55) * pitch, t, .08); e.tg.gain.setTargetAtTime(vol * (.002 + thr * .007) * clamp((rpm - 7000) / 5000, 0, 1), t, .1);
+    // passage de rapport : coupure franche de ~45 ms (montée) ou coup de gaz (rétrogradage)
+    if (gear && e.gear && gear !== e.gear) {
+      const up = gear > e.gear;
+      e.shift.gain.cancelScheduledValues(t); e.shift.gain.setValueAtTime(up ? .25 : 1.3, t); e.shift.gain.linearRampToValueAtTime(1, t + (up ? .06 : .1));
+      if (!up && Math.random() < .7) this.popBurst(e, vol);
+    }
+    e.gear = gear;
+    // pétarades à la décélération à haut régime
+    if (thr < .1 && rpm > 8500 && Math.random() < .08) this.popBurst(e, vol * .6);
+    e.out.gain.setTargetAtTime(vol * (this.ducked ? .12 : 1) * (.045 + thr * .075), t, .06);
+  },
+  popBurst(e, vol) {
+    const t = this.ctx.currentTime, g = e.pop.gain;
+    for (let k = 0; k < 3; k++) { const s = t + k * (.03 + Math.random() * .04); g.setValueAtTime(vol * (this.ducked ? .1 : .5) * Math.random(), s); g.setTargetAtTime(0, s + .005, .012); }
+  },
   engineOn() {
     if (!this.ctx || this.eng) return;
-    const ctx = this.ctx, out = ctx.createGain(); out.gain.value = 0; out.connect(ctx.destination);
-    const shaper = ctx.createWaveShaper(), curve = new Float32Array(1024);
-    for (let i = 0; i < 1024; i++) { const x = i / 512 - 1; curve[i] = Math.tanh(x * 2.6); }
-    shaper.curve = curve;
-    const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 1500; lp.Q.value = 1.2;
-    const peak = ctx.createBiquadFilter(); peak.type = 'peaking'; peak.frequency.value = 900; peak.Q.value = 2; peak.gain.value = 6;
-    const pre = ctx.createGain(); pre.gain.value = .5;
-    pre.connect(shaper).connect(lp).connect(peak).connect(out);
-    const mk = (type, g) => { const o = ctx.createOscillator(), gg = ctx.createGain(); o.type = type; gg.gain.value = g; o.connect(gg).connect(pre); o.start(); return o; };
-    const o1 = mk('sawtooth', .6), o2 = mk('sawtooth', .35), o3 = mk('square', .25), o4 = mk('triangle', .3);
-    const tb = ctx.createOscillator(), tg = ctx.createGain(); tb.type = 'sine'; tg.gain.value = 0; tb.connect(tg).connect(out); tb.start();
-    const nz = ctx.createBufferSource(); const buf = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate), d = buf.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1; nz.buffer = buf; nz.loop = true;
+    const ctx = this.ctx, bus = ctx.createGain(); bus.gain.value = 1;
+    const comp = ctx.createDynamicsCompressor(); comp.threshold.value = -16; comp.ratio.value = 4; bus.connect(comp).connect(ctx.destination);
+    const a = this.voice(bus), b = this.voice(bus);
+    // pneus qui crissent, pluie, vent (souffle de l'air, croît avec la vitesse)
+    const nz = ctx.createBufferSource(); nz.buffer = this.noiseBuf(); nz.loop = true;
     const sq = ctx.createBiquadFilter(); sq.type = 'bandpass'; sq.frequency.value = 2600; sq.Q.value = 6; const sg = ctx.createGain(); sg.gain.value = 0;
     const rl = ctx.createBiquadFilter(); rl.type = 'lowpass'; rl.frequency.value = 1400; const rg = ctx.createGain(); rg.gain.value = 0;
-    nz.connect(sq).connect(sg).connect(ctx.destination); nz.connect(rl).connect(rg).connect(ctx.destination); nz.start();
-    this.eng = { out, o: [o1, o2, o3, o4], lp, tb, tg, sg, rg, nz };
+    const wl = ctx.createBiquadFilter(); wl.type = 'bandpass'; wl.frequency.value = 500; wl.Q.value = .5; const wg = ctx.createGain(); wg.gain.value = 0;
+    nz.connect(sq).connect(sg).connect(bus); nz.connect(rl).connect(rg).connect(bus); nz.connect(wl).connect(wg).connect(bus); nz.start();
+    this.eng = { a, b, sg, rg, wg, nz, bus };
   },
-  engine(rpm, thr, vol, pitch = 1, squeal = 0, rain = 0) {
-    if (!this.eng) return; const e = this.eng, t = this.ctx.currentTime;
-    const f = Math.max(30, rpm / 60 * 3 * pitch); // V6 : 3 explosions par tour
-    e.o[0].frequency.setTargetAtTime(f, t, .02); e.o[1].frequency.setTargetAtTime(f * 2.01, t, .02); e.o[2].frequency.setTargetAtTime(f * .5, t, .02); e.o[3].frequency.setTargetAtTime(f * 3, t, .02);
-    e.lp.frequency.setTargetAtTime(700 + thr * 2600 + rpm * .05, t, .04);
-    e.tb.frequency.setTargetAtTime(2200 + rpm * .45, t, .05); e.tg.gain.setTargetAtTime(vol * thr * .006, t, .08);
-    const dk = this.ducked ? .12 : 1;
-    e.out.gain.setTargetAtTime(vol * dk * (.05 + thr * .07), t, .08);
+  // rpm, gaz, volume, hauteur (Doppler), crissement, pluie ; o = { gear, v, other: { rpm, thr, vol, pitch, gear } }
+  engine(rpm, thr, vol, pitch = 1, squeal = 0, rain = 0, o = {}) {
+    if (!this.eng) return; const e = this.eng, t = this.ctx.currentTime, dk = this.ducked ? .12 : 1;
+    this.setVoice(e.a, rpm, thr, vol, pitch, o.gear);
+    const ot = o.other; if (ot) this.setVoice(e.b, ot.rpm, ot.thr, ot.vol, ot.pitch, ot.gear); else e.b.out.gain.setTargetAtTime(0, t, .1);
     e.sg.gain.setTargetAtTime(Math.min(.06, squeal * .08) * vol * dk, t, .05);
     e.rg.gain.setTargetAtTime(rain * .03, t, .3);
+    e.wg.gain.setTargetAtTime(Math.min(.035, Math.pow((o.v || 0) / 90, 2) * .035) * vol * dk, t, .2);
   },
-  engineOff() { if (this.eng) { try { this.eng.o.forEach(o => o.stop()); this.eng.tb.stop(); this.eng.nz.stop(); this.eng.out.disconnect(); this.eng.sg.disconnect(); this.eng.rg.disconnect(); } catch (e) { } this.eng = null; } },
+  // acclamations de la foule (podium)
+  cheer() {
+    const ctx = this.ctx; if (!ctx) return; const t = ctx.currentTime;
+    const src = ctx.createBufferSource(); src.buffer = this.noiseBuf(); src.loop = true;
+    const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 1100; bp.Q.value = .6;
+    const g = ctx.createGain(); g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(.06, t + 1.2); g.gain.setTargetAtTime(.035, t + 3, 2); g.gain.setTargetAtTime(0, t + 14, 3);
+    src.connect(bp).connect(g).connect(ctx.destination); src.start(); src.stop(t + 26);
+    for (let k = 0; k < 60; k++) { const s = t + .5 + Math.random() * 12, c = ctx.createBufferSource(); c.buffer = this.noiseBuf(); const cg = ctx.createGain(), hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 1500; cg.gain.setValueAtTime(.05 * Math.random(), s); cg.gain.setTargetAtTime(0, s + .004, .01); c.connect(hp).connect(cg).connect(ctx.destination); c.start(s, Math.random()); c.stop(s + .08); }
+  },
+  engineOff() { if (this.eng) { try { for (const v of [this.eng.a, this.eng.b]) { v.o.forEach(o => o.stop()); v.lfo.stop(); v.tb.stop(); v.nz.stop(); v.pn.stop(); v.out.disconnect(); } this.eng.nz.stop(); this.eng.bus.disconnect(); } catch (e) { } this.eng = null; } },
 };
 
 /* =====================================================================
@@ -3238,9 +3625,10 @@ const Speech = {
   sorted() { return this.voices().slice().sort((a, b) => this.rank(b) - this.rank(a)); },
   pickVoice(role, seed) {
     const vs = this.sorted(); if (!vs.length) return null;
-    const pref = role === 'eng' ? Game.prefs.voiceEng : Game.prefs.voiceDrv;
+    const pref = role === 'eng' ? Game.prefs.voiceEng : role === 'comm' ? Game.prefs.voiceComm : Game.prefs.voiceDrv;
     const chosen = pref && vs.find(v => v.name === pref); if (chosen) return chosen;
     if (role === 'eng') return vs[0];
+    if (role === 'comm') { const male = vs.find(v => /thomas|nicolas|daniel|henri|paul|claude|jacques|mathieu|guillaume|antoine/i.test(v.name) && v !== this.pickVoice('eng', 0)); return male || vs[Math.min(1, vs.length - 1)]; }
     const good = vs.filter(v => this.rank(v) >= this.rank(vs[0]) - 5);
     return good.length > 1 ? good[1 + (seed % (good.length - 1))] : vs[Math.min(1, vs.length - 1)];
   },
@@ -3253,7 +3641,7 @@ const Speech = {
     // iPad : si le micro est resté ouvert sans qu'on parle, on le ferme avant que la voix démarre
     // (sinon iOS bascule son mode audio pendant la phrase et l'image se fige)
     if (Mic.isIOS && Mic.running && !Mic.gate) Mic.idleOff();
-    if (Game.prefs.neural && Neural.st === 'ready' && Neural.avail()) {
+    if (Game.prefs.neural && Neural.st === 'ready' && Neural.avail() && role !== 'comm') {
       Neural.say(this.clean(text), role, onEnd).catch(e => { console.warn('voix fluide', e); Neural.st = 'error'; Neural.err = 'calcul de la voix impossible sur cet appareil'; this.say(text, role, seed, onEnd); });
       return;
     }
@@ -3262,16 +3650,16 @@ const Speech = {
     const u = new SpeechSynthesisUtterance(this.clean(text));
     const h = [...(seed || 'x')].reduce((a, ch) => a + ch.charCodeAt(0), 0);
     u.lang = 'fr-FR';
-    const v = this.pickVoice(role === 'eng' ? 'eng' : 'drv', h); if (v) { u.voice = v; u.lang = v.lang; }
+    const v = this.pickVoice(role === 'eng' ? 'eng' : role === 'comm' ? 'comm' : 'drv', h); if (v) { u.voice = v; u.lang = v.lang; }
     // une voix de qualité sonne mieux sans déformation : on garde la hauteur naturelle
-    u.rate = role === 'eng' ? 1.0 : 1.07;
-    u.pitch = role === 'eng' ? 1 : 1 + ((h % 5) - 2) * .03;
+    u.rate = role === 'eng' ? 1.0 : role === 'comm' ? 1.13 : 1.07;
+    u.pitch = role === 'eng' ? 1 : role === 'comm' ? .96 : 1 + ((h % 5) - 2) * .03;
     let done = false; const fin = () => { if (!done) { done = true; onEnd && onEnd(); } };
     u.onend = fin; u.onerror = fin;
     setTimeout(fin, 3000 + text.length * 120);
     speechSynthesis.speak(u);
   },
-  test(role) { this.stop(); this.say(role === 'eng' ? 'Box box, box box. On passe en pneus durs, écart de deux secondes sur Leclerc.' : 'Compris, je pousse ! Les pneus arrière commencent à glisser.', role, 'TST'); },
+  test(role) { this.stop(); if (role === 'comm') return this.say('Extinction des feux, et c\'est parti ! Quel départ de Leclerc, il passe Verstappen au premier virage !', 'comm', 'COM'); this.say(role === 'eng' ? 'Box box, box box. On passe en pneus durs, écart de deux secondes sur Leclerc.' : 'Compris, je pousse ! Les pneus arrière commencent à glisser.', role, 'TST'); },
   stop() { if (this.ok) speechSynthesis.cancel(); if (Neural.stopCur) { Neural.stopCur(); Neural.stopCur = null; } },
 };
 
@@ -3405,7 +3793,7 @@ const Radio = {
       this.el && this.el.classList.remove('talk');
       setTimeout(() => this.next(), m.q ? 120 : 350);
     };
-    if (speak) { Sfx.beep(false); Sfx.duck(true); Speech.say(m.text, m.vr || (m.who === 'eng' || (m.who === 'me' && this.role === 'manager') ? 'eng' : 'drv'), c0(m), after); }
+    if (speak) { if (typeof Comm !== 'undefined') Comm.cut(); Sfx.beep(false); Sfx.duck(true); Speech.say(m.text, m.vr || (m.who === 'eng' || (m.who === 'me' && this.role === 'manager') ? 'eng' : 'drv'), c0(m), after); }
     else setTimeout(after, m.who === 'me' ? Math.min(1500, 500 + m.text.length * 12) : 900 + m.text.length * 35);
     function c0(m) { return m.car ? m.car.code : 'x'; }
   },
@@ -3627,6 +4015,13 @@ const Brain = {
     if (RX.save.test(t)) { car.mode = 'save'; car.paceT = 0; return reply(pick(['Compris, je gère les pneus.', 'Ok, mode économie.', 'Reçu, je lève le pied.'])); }
     if (RX.defend.test(t)) { car.mode = 'defend'; car.paceT = 0; return reply(pick(['Compris, je ferme la porte.', 'Ok, je défends. Il ne passera pas.'])); }
     if (RX.push.test(t)) { car.mode = 'push'; car.paceT = 0; return reply(pick(['C\'est parti, je pousse !', 'Ok, mode attaque. On y va !', 'Compris, je donne tout.', 'Enfin ! Je pousse.'])); }
+    if (/\b(overtake|boost|recharge|recharger|batterie)\b/.test(t)) {
+      const m = /overtake/.test(t) ? 'ovt' : /boost/.test(t) ? 'boost' : /recharge/.test(t) ? 'harvest' : null;
+      if (!m) return reply(`Batterie à ${Math.round(car.bat)} %.${car.bat < 25 ? ' Elle se vide vite dans les lignes droites.' : ''}`);
+      if (!r.setERS(car, m)) return reply('Je ne suis pas assez près pour l\'overtake, il faut moins d\'une seconde.');
+      car.ersHold = r.t + 25;
+      return reply({ ovt: 'Overtake ! J\'y vais !', boost: 'Boost activé.', harvest: 'Ok, je recharge la batterie.' }[m]);
+    }
     if (RX.normal.test(t)) { car.mode = 'normal'; car.paceT = 0; return reply('Compris, rythme normal.'); }
     const ans = Talk.driver(car, t);
     if (ans) return reply(ans);
@@ -3666,6 +4061,7 @@ const Brain = {
   },
   // ---------- MESSAGES SPONTANÉS ----------
   handle(ev) {
+    if (typeof Comm !== 'undefined') Comm.handle(ev);
     if (this.race.q) return QBrain.handle(ev);
     if (['pitin', 'pitstop', 'fastest', 'dnf'].includes(ev.k) && this.race.session === 'race' && this.can('riv', 9)) {
       const mineCars = this.race.cars.filter(c => this.mine(c));
@@ -3705,6 +4101,16 @@ const Brain = {
         break;
       }
       case 'restart': if (typeof rcBanner === 'function') rcBanner('Drapeau vert — la course reprend'); { const c = pilot ? me : r.cars.find(x => this.mine(x) && !x.dnf); if (c) (pilot && c.isPlayer) ? this.eng(c, 'Vert, vert, vert ! Attaque !', { sys: true }) : this.drv(c, 'C\'est reparti !'); } break;
+      case 'formstart':
+        if (pilot) this.eng(me, `Bienvenue au ${gpName(TRACKS[Game.wk.gp])}. ${wkWeatherLine()} Tour de formation : chauffe les pneus en zigzaguant dans les lignes droites, et les freins. Reste derrière la voiture devant, pas de dépassement.`);
+        else this.later(() => this.drv(r.cars.find(x => x.team === r.myTeam), pick(['Tour de formation, je chauffe les pneus.', 'Radio check, tout est bon de mon côté.', 'Les freins sont un peu froids, je les chauffe.'])), 3);
+        break;
+      case 'formend':
+        if (pilot) this.eng(me, pick(['Tout le monde est en place. Concentre-toi sur les feux. Mode départ, batterie pleine.', 'Grille complète. Embrayage prêt, attends l\'extinction des feux.']));
+        break;
+      case 'ers':
+        if (P(c) && this.can('ersmsg', 3)) this.eng(c, { boost: 'Mode boost, la batterie va descendre vite.', harvest: 'Mode recharge, on remplit la batterie.', normal: 'ERS en mode normal.', ovt: 'Overtake activé ! Fonce !' }[ev.m], { q: 1 });
+        break;
       case 'go':
         if (pilot) this.eng(me, pick(['Feux éteints, c\'est parti ! Bonne course.', 'Allez, allez, allez ! Bon départ.']));
         else this.later(() => this.drv(r.cars.find(x => x.team === r.myTeam), pick(['Bon départ !', 'C\'est parti, on y va.'])), 6);
@@ -3715,6 +4121,8 @@ const Brain = {
         const left = r.laps - c.lapsDone;
         if (P(c)) {
           if (left === 1) this.eng(c, 'Dernier tour ! Ramène-la à la maison.');
+          else if (c.lapsDone === 1) this.eng(c, `Fin du premier tour, P${c.pos}. ${c.pos < c.gp + 1 ? 'Super départ, tu as gagné ' + (c.gp + 1 - c.pos) + ' place' + (c.gp - c.pos > 0 ? 's' : '') + ' !' : c.pos > c.gp + 1 ? 'On a perdu un peu au départ, on va les reprendre.' : 'Position conservée, bon départ.'}`);
+          else if (Math.random() < .3 && isFinite(c.bestLap) && ev.t && this.can('laptime', 40)) { const d = ev.t - c.bestLap; this.eng(c, d < .02 ? `${fmtLap(ev.t)}, c'est ton meilleur tour ! Continue.` : d < .4 ? `${fmtLap(ev.t)}, à ${frNum(d, 1)} de ton meilleur. Bon rythme.` : `${fmtLap(ev.t)}. On a perdu ${frNum(d, 1)} ce tour, sans doute le trafic.`, { q: 1 }); }
           else if (c.lapsDone % 4 === 2) { const g = this.gaps(c); if (g.a && g.ga != null) this.eng(c, `P${c.pos}. Écart devant ${frNum(g.ga)} sur ${g.a.drv.last}.` + (g.b && g.gb != null && g.gb < 1.5 ? ` ${g.b.drv.last} à ${frNum(g.gb)} derrière.` : '')); }
         } else if (left === Math.floor(r.laps * .4) && r.twoComp && c.stops === 0 && !c.pitReq && this.once(c, 'mand')) this.drv(c, 'On doit encore faire notre arrêt obligatoire, non ?');
         break;
@@ -3726,7 +4134,8 @@ const Brain = {
           else if (Math.random() < .5) this.drv(c, pick(['Bon arrêt les gars !', 'Super arrêt, merci !']));
         }
         break;
-      case 'autopit': this.eng(c, 'Limiteur activé, on t\'attend.', { q: 1 }); break;
+      case 'autopit': this.eng(c, pick(['Limiteur activé, on t\'attend.', 'Limiteur, limiteur. Vise ton emplacement, l\'équipe est prête.', 'Entrée des stands, limiteur ! Tout le monde est en place.']), { q: 1 }); break;
+      case 'pitout': if (P(c) && r.session === 'race') this.eng(c, pick(['Relâche le limiteur à la ligne… Attention à la ligne blanche en sortie.', 'Bonne sortie. Les pneus sont froids, sois prudent au premier virage.', 'Tu ressors dans le trafic, attention aux voitures qui arrivent.']), { q: 1 }); break;
       case 'gain':
         if (this.mine(c) && this.can('gain' + c.code, 20)) P(c) ? this.eng(c, pick([`Bien joué ! P${ev.pos}.`, `Superbe dépassement ! Tu es P${ev.pos}.`])) : this.drv(c, pick(['Yes ! Je l\'ai passé !', 'Et voilà, dépassé !', `P${ev.pos} !`]));
         else if (this.mine(ev.o) && this.can('lose' + ev.o.code, 25)) P(ev.o) ? this.eng(ev.o, pick([`${c.drv.last} est passé. P${ev.o.pos + 1}, on se bat.`, 'Pas grave, reste concentré.'])) : this.drv(ev.o, pick(['Il m\'a passé, je n\'avais plus de batterie.', `${c.drv.last} est trop rapide dans la ligne droite.`, 'Mince ! Je n\'ai pas pu résister.']));
@@ -3759,12 +4168,16 @@ const Brain = {
   // appelé chaque seconde de simulation
   tick() {
     const r = this.race, pilot = this.role === 'pilot';
+    if (typeof Comm !== 'undefined') Comm.tick();
     if (r.q) return QBrain.tick();
     if (r.phase !== 'race' || r.session !== 'race' || r.done) return;
     for (const c of r.cars) {
       if (!this.mine(c) || c.dnf || c.fin) continue;
       const left = r.laps - c.lapsDone;
       if (pilot && c.isPlayer) {
+        if (!Game.multi && c.bat < 12 && c.ers !== 'harvest' && this.can('lowbat', 40)) this.eng(c, `Batterie à ${Math.round(c.bat)} %. Passe en mode recharge un tour, sinon tu vas manquer de puissance.`);
+        if (!Game.multi && c.ers === 'harvest' && c.bat > 95 && this.can('fullbat', 40)) this.eng(c, 'Batterie pleine, repasse en mode normal ou boost.');
+        if (!Game.multi && c.ovtAvail && c.ers !== 'ovt' && c.bat > 20 && this.can('ovtmsg', 25)) { const g = this.gaps(c); if (g.a) this.eng(c, `Overtake disponible sur ${g.a.drv.last} ! Appuie sur OVERTAKE.`, { q: 1 }); }
         if (!Game.multi && !c.pitReq && !c.pit && left > 1 && c.lapsDone >= 1) {
           const ideal = idealFor(r.w);
           const usedDry = new Set([...c.used].filter(x => !isWetTyre(x)));
@@ -3899,6 +4312,11 @@ const Talk = {
     const mate = r.cars.find(x => x.team === c.team && x !== c);
     const other = this.carNamed(t, c);
     if (has(/\b(repete|repeter|pas compris|j ai pas entendu|redis)\b/) && this.last.eng) return 'Je répète : ' + this.last.eng;
+    if (has(/\b(batterie|ers|energie|boost|overtake|recharge|recharger|hybride|electrique)\b/)) {
+      const m = has(/\bovertake\b/) ? 'ovt' : has(/\bboost\b/) ? 'boost' : has(/\b(recharge|recharger)\b/) && !has(/\b(combien|niveau|etat)\b/) ? 'harvest' : has(/\bnormal\b/) ? 'normal' : null;
+      if (m) { const ok = r.setERS(c, m); return ok ? { ovt: 'Overtake activé, vas-y !', boost: 'Mode boost activé. Surveille la batterie.', harvest: 'Mode recharge activé.', normal: 'ERS en mode normal.' }[m] : 'Pas d\'overtake pour l\'instant : il faut être à moins d\'une seconde de la voiture devant.'; }
+      return `Batterie à ${Math.round(c.bat)} %, mode ${ERS[c.ers].n.toLowerCase()}. ${c.bat < 25 ? 'Recharge un peu au freinage.' : c.bat > 80 ? 'Tu peux attaquer avec le boost.' : 'Ça va.'}`;
+    }
     if (other && !has(/\b(laisse|passer)\b/)) out.push(this.about(c, other));
     if (has(/\b(pneus|gomme|gommes|usure|grip|adherence|degradation|grain|graining|blister|temperature des pneus|pressions?)\b/) && !(other && has(/\b(il|lui|ses|son)\b/)) && !has(/\b(devant|derriere|celui|les autres|il a|ils ont)\b/)) {
       const w = Math.round(c.wear), k = this.mostWorn(c), h = this.worstCorner(c);
@@ -4012,7 +4430,15 @@ Object.assign(Talk, {
     if (c.bestLap && isFinite(c.bestLap)) L.push(`Cible pour ce tour : ${fmtLap(c.bestLap - .2)}. Tu es capable.`);
     if (g.a && g.a.dist < c.dist - r.T.L * .5 && g.ga != null && g.ga < 3) L.push(`Trafic devant : ${g.a.drv.last} est un retardataire, il va te laisser passer.`);
     if (g.a && g.ga != null) L.push(`P${c.pos}, ${this.f1(g.ga)} sur ${g.a.drv.last}. ${g.b && g.gb != null ? g.b.drv.last + ' à ' + this.f1(g.gb) + ' derrière.' : ''}`);
-    L.push(this.r(['Bon rythme, continue comme ça.', 'Les chronos sont bons, garde ce rythme.', 'Tout est normal sur la télémétrie.', 'Attention aux limites de piste au virage 4, on a déjà un avertissement.', 'Le vent a tourné, il est de face dans la ligne droite principale.', 'La piste se gomme, l\'adhérence s\'améliore.', 'Pense à ta respiration, tu fais une super course.', 'Freins et moteur dans le vert, tu peux attaquer.', 'Carburant dans la cible, aucun souci.']));
+    // ERS et gestion
+    if (c.ers === 'boost' && c.bat < 35) L.push(`Tu es en boost et la batterie tombe à ${Math.round(c.bat)} %. Repasse en normal dans la prochaine ligne droite.`);
+    if (c.ers === 'normal' && c.bat > 85 && g.a && g.ga != null && g.ga < 2) L.push(`Batterie à ${Math.round(c.bat)} %. Mets le boost pour revenir sur ${g.a.drv.last}.`);
+    if (c.temps.some(t => t > 104)) L.push('Les températures des freins montent, décale un peu ton point de freinage.');
+    if (r.fastest.c && r.fastest.c !== c && left > 3) L.push(`Le meilleur tour est à ${r.fastest.c.drv.last} en ${fmtLap(r.fastest.t)}. On ne s'en occupe pas pour l'instant.`);
+    if (g.b && g.gb != null && g.gb > 3 && g.gb < 6) L.push(`Tu as ${this.f1(g.gb)} d'avance sur ${g.b.drv.last}, c'est confortable. Gère.`);
+    if (c.pos <= 3 && left > 5) L.push(this.r(['On est dans le coup pour le podium, reste propre.', 'Le podium est à portée, pas de prise de risque inutile.']));
+    if (c.pos > 10) L.push(this.r([`Les points sont à ${c.pos - 10} place${c.pos - 10 > 1 ? 's' : ''}. On y croit.`, 'On peut encore aller chercher les points, la course est longue.']));
+    L.push(this.r(['Bon rythme, continue comme ça.', 'Secteur 2 très propre ce tour-ci, c\'est là que tu gagnes du temps.', 'Le dernier secteur peut être amélioré, attention au freinage du dernier virage.', 'Mode moteur dans la cible, tout est vert.', 'Ta sortie de virage 1 était parfaite.', 'Attention, le vent souffle de côté au virage 8.', 'On regarde la stratégie de ceux de devant, je te tiens au courant.', 'Continue de chauffer les pneus avant dans les lignes droites.', 'Le mur des stands est content, super boulot.', 'Garde de la batterie pour défendre en fin de tour.', 'Les écarts sont stables, pas de changement de plan.', 'Respire, relâche les épaules dans la ligne droite.', 'Les chronos sont bons, garde ce rythme.', 'Tout est normal sur la télémétrie.', 'Attention aux limites de piste au virage 4, on a déjà un avertissement.', 'Le vent a tourné, il est de face dans la ligne droite principale.', 'La piste se gomme, l\'adhérence s\'améliore.', 'Pense à ta respiration, tu fais une super course.', 'Freins et moteur dans le vert, tu peux attaquer.', 'Carburant dans la cible, aucun souci.']));
     return this.r(L);
   },
   // le pilote IA parle à son ingénieur (le joueur)
@@ -4026,7 +4452,10 @@ Object.assign(Talk, {
     if (c.bat < 25) L.push('Je n\'ai plus de batterie dans la ligne droite, je me fais aspirer.');
     if (r.rain > 0 && r.w < .3) L.push(this.r(['Quelques gouttes au virage 7.', 'Ça devient glissant dans le dernier secteur.']));
     if (r.w > .3 && !isWetTyre(c.comp)) L.push('C\'est une patinoire, il faut des intermédiaires !');
-    L.push(this.r(['Le vent est fort dans le dernier secteur.', 'J\'ai un peu de sous-virage en entrée de virage.', 'La voiture est super aujourd\'hui !', 'Quel est l\'écart avec devant ?', 'Je peux pousser plus si vous voulez.', 'Le rythme est bon ?', 'La piste s\'améliore, plus de grip.', 'Il y a des débris au virage 3, attention.', 'Mon siège est brûlant, il fait chaud ici !', 'Le moteur tourne bien, rien à signaler.']));
+    if (c.ers === 'harvest') L.push('Je recharge la batterie, je perds un peu en ligne droite.');
+    if (c.mode === 'push' && c.wear > 50) L.push('Si je continue à attaquer comme ça, les pneus ne vont pas tenir.');
+    if (c.pos <= 3) L.push(this.r(['On peut aller chercher la victoire, je le sens !', 'Le podium, on ne le lâche pas !']));
+    L.push(this.r(['Le vent est fort dans le dernier secteur.', 'L\'équilibre a changé avec le carburant qui baisse, plus de survirage.', 'Les freins arrière sont un peu chauds, rien de grave.', 'J\'ai bloqué une roue au virage 1, il y a un peu de vibration.', 'La batterie se recharge bien au freinage.', 'Combien de tours il reste ?', 'Il y a beaucoup de gommes hors trajectoire.', 'Super réglage aujourd\'hui, la voiture est stable.', 'Je prends la corde trop tôt au virage 5, je corrige.', 'Est-ce que quelqu\'un devant a des problèmes ?', 'Le boost marche super bien en sortie des virages lents.', 'J\'ai bu un peu, ça va mieux.', 'J\'ai un peu de sous-virage en entrée de virage.', 'La voiture est super aujourd\'hui !', 'Quel est l\'écart avec devant ?', 'Je peux pousser plus si vous voulez.', 'Le rythme est bon ?', 'La piste s\'améliore, plus de grip.', 'Il y a des débris au virage 3, attention.', 'Mon siège est brûlant, il fait chaud ici !', 'Le moteur tourne bien, rien à signaler.']));
     return this.r(L);
   },
   // réactions aux autres voitures (arrêts, meilleurs tours, abandons)
@@ -4041,6 +4470,9 @@ Object.assign(Talk, {
   },
 });
 const OTHER_LINES_MORE = [
+  'Je n\'ai plus de batterie, il m\'a passé comme si j\'étais arrêté.', 'Overtake activé, je vais l\'avoir !', 'Il a freiné tard, beaucoup trop tard !', 'Les pneus sont froids après la safety car, attention.',
+  'Ma radio grésille, vous m\'entendez ?', 'Je crois que j\'ai abîmé l\'aileron avant sur le vibreur.', 'Il faut un deuxième arrêt, ces pneus ne tiendront pas.', 'Le soleil m\'éblouit au virage 3.',
+  'Personne ne peut me suivre dans les virages rapides aujourd\'hui !', 'Pourquoi je suis en mode recharge ?', 'J\'ai senti un contact à l\'arrière, vérifiez la télémétrie.', 'Il ne laisse jamais d\'espace, c\'est limite.',
   'Les pneus arrière sont finis, je glisse partout.', 'Il m\'a coupé la route au freinage, c\'est dangereux !', 'Pourquoi on ne m\'a pas arrêté au tour dernier ?', 'J\'ai perdu l\'appui à l\'avant, je crois que l\'aileron est touché.',
   'C\'est quoi ce rythme ? Je suis bloqué derrière lui depuis cinq tours.', 'Le volant vibre beaucoup au freinage.', 'Plus de batterie, impossible de défendre.', 'Mon boîtier de vitesses fait un bruit bizarre.',
   'Il fait une chaleur dans ce cockpit !', 'Donnez-moi le plan, on rentre ou pas ?', 'Il a dépassé hors des limites de la piste, il doit rendre la place !', 'Les freins avant sont trop chauds.',
@@ -4256,6 +4688,104 @@ const QBrain = {
   },
 };
 const QLINES = ['Il y a une voiture lente dans le dernier virage, il m\'a gêné !', 'Le vent a tourné, l\'arrière est nerveux.', 'J\'ai perdu deux dixièmes au premier secteur.', 'Combien de temps il reste ?', 'Les pneus avant ne sont pas encore à température.', 'Super tour, ça c\'était propre !', 'Il est au milieu de la trajectoire, enquête s\'il vous plaît !', 'Je n\'ai pas pu finir mon tour, trafic.', 'Plus de batterie dans la dernière ligne droite.', 'J\'ai bloqué l\'avant droit au freinage.'];
+
+/* =====================================================================
+   COMMENTATEUR TV (en français) — seulement si le mode est activé.
+   Style « direct télé » : enthousiaste, phrases courtes. Il se tait dès que
+   la radio parle (la radio a la priorité) et ses phrases trop vieilles sont jetées.
+   ===================================================================== */
+const Comm = {
+  q: [], speaking: false, el: null, last: 0, nextIdle: 0, cool: {},
+  on() { return !!Game.prefs.comm && Game.raf; },
+  mount(container) {
+    if (!container) return;
+    container.insertAdjacentHTML('beforeend', `<div class="comm" aria-live="polite"><span class="lbl">${ic('comm')} COMMENTAIRE</span><span class="txt"></span></div>`);
+    this.el = container.querySelector('.comm');
+  },
+  reset() { this.q = []; this.speaking = false; this.el = null; this.cool = {}; this.nextIdle = 0; this.lead = null; this.lapLead = -1; },
+  can(k, s) { const t = Date.now(); if ((this.cool[k] || 0) > t) return false; this.cool[k] = t + s * 1000; return true; },
+  say(text, prio = 1) {
+    if (!this.on()) return;
+    this.q.push({ text, prio, at: Date.now() });
+    this.q.sort((a, b) => b.prio - a.prio);
+    if (this.q.length > 3) this.q.length = 3;
+    this.pump();
+  },
+  // la radio passe en premier : on coupe le commentateur
+  cut() { if (this.speaking) { this.speaking = false; Speech.stop(); this.hide(); } },
+  hide() { if (this.el) this.el.classList.remove('show'); },
+  pump() {
+    if (this.speaking || !this.on()) return;
+    if (Radio.busy || Radio.q.length || Mic.gate) { clearTimeout(this._t); this._t = setTimeout(() => this.pump(), 600); return; }
+    let m; while ((m = this.q.shift()) && Date.now() - m.at > 7000 && m.prio < 3);
+    if (!m) return;
+    this.speaking = true;
+    if (this.el) { this.el.querySelector('.txt').textContent = m.text; this.el.classList.add('show'); }
+    const done = () => { if (!this.speaking) return; this.speaking = false; setTimeout(() => { if (!this.speaking) this.hide(); }, 1200); setTimeout(() => this.pump(), 250); };
+    if (Game.prefs.voice && !Game.paused) Speech.say(m.text, 'comm', 'COM', done); else setTimeout(done, 1500 + m.text.length * 45);
+  },
+  nm: c => c.drv.last, full: c => c.drv.name,
+  pos: p => p === 1 ? 'la tête' : 'la ' + p + (p === 1 ? 're' : 'e') + ' place',
+  handle(ev) {
+    if (!this.on()) return;
+    const r = Brain.race, c = ev.c, gp = gpName(TRACKS[Game.wk.gp]), P = pick;
+    switch (ev.k) {
+      case 'formstart': this.say(P([`Bonjour à toutes et à tous, et bienvenue pour ce ${gp} ! Les monoplaces s'élancent pour le tour de formation.`, `Bienvenue pour ce ${gp} ! Tour de formation, les pilotes font chauffer les pneus.`]), 2); break;
+      case 'formend': this.say(P(['Tout le monde est en place sur la grille… Les cinq feux vont s\'allumer.', 'La grille est formée. Moment de tension, le départ est imminent !']), 2); break;
+      case 'go': this.say(P([`Extinction des feux, et c'est parti pour ce ${gp} !`, 'Feux éteints, c\'est parti ! Quel envol !', 'Et c\'est parti ! Les voitures foncent vers le premier virage !']), 3); break;
+      case 'gain':
+        if (r.session !== 'race' || ev.pos > 10 || !this.can('ov', 9)) break;
+        this.say(ev.pos === 1 ? P([`Et ${this.nm(c)} passe ${this.nm(ev.o)} ! Il prend la tête de la course !`, `Incroyable ! ${this.nm(c)} déborde ${this.nm(ev.o)} et s'empare de la tête !`]) : P([`${this.nm(c)} passe ${this.nm(ev.o)} ! Il remonte à ${this.pos(ev.pos)}.`, `Belle manœuvre de ${this.nm(c)} sur ${this.nm(ev.o)}, il est maintenant P${ev.pos}.`, `Ça bouge ! ${this.nm(c)} dépasse ${this.nm(ev.o)} pour la P${ev.pos}.`]), ev.pos <= 3 ? 2 : 1);
+        break;
+      case 'pitstop': if (r.session === 'race' && (c.pos <= 8 || c.team === r.myTeam) && this.can('pit', 12)) this.say(ev.slow ? `Oh, arrêt raté pour ${this.nm(c)} ! Problème avec une roue, il perd beaucoup de temps.` : `Arrêt pour ${this.nm(c)} : ${frNum(ev.dur, 1)} secondes, il repart en ${PL[c.comp]}.`); break;
+      case 'fastest': if (r.session === 'race' && c.lapsDone > 1 && this.can('fl', 25)) this.say(`Meilleur tour en course pour ${this.full(c)}, en ${fmtLap(ev.t)} !`); break;
+      case 'incident': this.say(ev.type === 'crash' ? P([`Oh ! Gros accident pour ${this.full(c)} au virage ${ev.turn} ! Il est dans le mur !`, `Accident ! ${this.full(c)} a perdu le contrôle au virage ${ev.turn}, c'est terminé pour lui.`]) : ev.type === 'failure' ? `${this.full(c)} ralentit… il s'arrête au bord de la piste. Casse mécanique, quel dommage !` : `Crevaison pour ${this.full(c)} ! Il doit rentrer au stand au ralenti.`, 3); break;
+      case 'dnf': if (this.can('dnf', 15)) this.say(`Coup dur pour ${this.full(c)}, contraint à l'abandon.`, 2); break;
+      case 'rcflag': {
+        const L = { sc: 'La voiture de sécurité entre en piste ! Le peloton va se regrouper.', vsc: 'Voiture de sécurité virtuelle déclarée, tout le monde doit ralentir.', red: 'Drapeau rouge ! La course est interrompue !', vscend: 'Fin de la voiture de sécurité virtuelle, on repart !', scin: 'La voiture de sécurité rentre à la fin de ce tour. Attention à la relance !' }[ev.f];
+        if (L) this.say(L, 3); break;
+      }
+      case 'restart': this.say(P(['Drapeau vert ! La course est relancée !', 'Et c\'est reparti ! Relance réussie !']), 3); break;
+      case 'rain': this.say('Les premières gouttes tombent sur le circuit ! La stratégie va être décisive.', 2); break;
+      case 'lap':
+        if (r.session !== 'race') break;
+        if (c === r.order[0] && c.lapsDone === 1 && r.order[1]) this.say(`Fin du premier tour : ${this.nm(c)} mène devant ${this.nm(r.order[1])}${r.order[2] ? ' et ' + this.nm(r.order[2]) : ''}.`, 2);
+        else if (c === r.order[0] && r.laps - c.lapsDone === 1) this.say(`Dernier tour pour ${this.full(c)} ! Va-t-il s'imposer ?`, 3);
+        break;
+      case 'flag': this.say(P([`Drapeau à damier ! ${this.full(c)} remporte le ${gp} !`, `C'est fait ! Victoire de ${this.full(c)} au ${gp} ! Quelle course !`]), 3); break;
+      case 'finish': if (c.finOrder === 2 || c.finOrder === 3) this.say(`${this.nm(c)} termine ${c.finOrder === 2 ? 'deuxième' : 'troisième'} et monte sur le podium.`, 2); break;
+      // qualifications
+      case 'qstart': this.say(ev.part === 1 ? `Bienvenue pour les qualifications du ${gp} ! La Q1 commence, les six derniers seront éliminés.` : ev.part === 2 ? 'Début de la Q2 ! Seuls les dix premiers iront en Q3.' : 'La Q3 commence ! Dix pilotes pour la pole position !', 2); break;
+      case 'qpole': if (this.can('qp', 15)) this.say(`${this.full(c)} prend la tête de la séance en ${fmtLap(ev.t)} !`); break;
+      case 'qchq': this.say(`Drapeau à damier, fin de la Q${ev.part}. Les pilotes encore en piste peuvent terminer leur tour.`, 2); break;
+      case 'qend': this.say(ev.part < 3 ? `Fin de la Q${ev.part}. Éliminés : ${ev.out.map(x => this.nm(x)).join(', ')}.` : `Pole position pour ${this.full(ev.top)} ! Il partira devant demain.`, 3); break;
+    }
+  },
+  // chaque seconde : si rien ne se passe, une phrase d'ambiance
+  tick() {
+    if (!this.on()) return;
+    const r = Brain.race; if (!r || r.q || r.phase !== 'race' || r.flag) return;
+    const now = Date.now(); if (!this.nextIdle) this.nextIdle = now + 25000;
+    if (now < this.nextIdle || this.speaking || this.q.length) return;
+    this.nextIdle = now + rand(22000, 38000);
+    const o = r.order.filter(c => !c.dnf), L = [];
+    for (let i = 0; i < Math.min(10, o.length - 1); i++) { const a = o[i], b = o[i + 1], g = b.gap - a.gap; if (g > 0 && g < .8 && !a.pit && !b.pit) { L.push(`Belle bataille pour la P${i + 1} entre ${this.nm(a)} et ${this.nm(b)}, seulement ${frNum(g, 1)} seconde d'écart !`); break; } }
+    if (o[1]) L.push(`${this.nm(o[0])} mène toujours, avec ${frNum(Math.max(0, o[1].gap - o[0].gap), 1)} secondes d'avance sur ${this.nm(o[1])}.`);
+    const left = r.laps - o[0].lapsDone; if (left > 1) L.push(`Encore ${left} tours à parcourir dans ce ${gpName(TRACKS[Game.wk.gp])}.`);
+    const fresh = o.filter(c => c.age < 3 && c.stops > 0); if (fresh.length) L.push(`${this.nm(fresh[0])} a des pneus neufs, il va être rapide dans les prochains tours.`);
+    const me = o.find(c => c.team === r.myTeam); if (me) L.push(`Regardons ${this.full(me)}, actuellement P${me.pos} en ${PL[me.comp]}.`);
+    if (r.w > .2) L.push('La piste est piégeuse, les pilotes doivent être très prudents.');
+    L.push(pick(['Quelle ambiance dans les tribunes aujourd\'hui !', 'La gestion des pneus va être la clé de cette course.', 'Les écarts sont très serrés dans le milieu de peloton.', 'La batterie joue un rôle énorme avec ces voitures 2026.']));
+    this.say(pick(L), 0);
+  },
+  podium(top) {
+    if (!Game.prefs.comm) return;
+    const [a, b, c] = top.map(x => x.c);
+    const t = `${a.drv.name} sur la plus haute marche du podium${b ? `, devant ${b.drv.last}` : ''}${c ? ` et ${c.drv.last}` : ''}. Quelle course ! Place au champagne !`;
+    this.speaking = false; this.q = [];
+    if (Game.prefs.voice) setTimeout(() => Speech.say(t, 'comm', 'COM'), 2500);
+  },
+};
 
 /* =====================================================================
    MULTIJOUEUR — un pilote + un ingénieur
@@ -4652,7 +5182,7 @@ function renderHome() {
     <div class="kicker">Saison 2026 · 24 Grands Prix · 11 écuries · 22 pilotes</div>
     <div class="logo">PADDOCK<span>F1</span></div>
     <p>Dirige ton écurie depuis le mur des stands ou prends le volant. Radio en voix et par écrit, caméras TV et embarquées, vrais tracés des circuits.</p>
-    ${s ? `<button class="btn big primary" id="h-cont"><span>Continuer la saison<br><small style="font-weight:600;opacity:.85">${esc(t.name)} · ${s.role === 'manager' ? 'Manager' : 'Pilote ' + esc(DRV[s.drv].last)} · Manche ${Math.min(s.round + 1, 24)}/24</small></span><span>▶</span></button>` : ''}
+    ${s ? `<button class="btn big primary" id="h-cont"><span>Continuer la saison<br><small style="font-weight:600;opacity:.85">${esc(t.name)} · ${s.role === 'manager' ? 'Manager' : 'Pilote ' + esc(DRV[s.drv].last)} · Manche ${Math.min(s.round + 1, 24)}/24</small></span><span>${ic('play')}</span></button>` : ''}
     <button class="btn big ${s ? '' : 'primary'}" id="h-new"><span>Nouvelle saison</span><span>${ic('right')}</span></button>
     <button class="btn big" id="h-quick"><span>Course rapide</span><span>${ic('right')}</span></button>
     <button class="btn big" id="h-set"><span>${ic('gear')} Réglages <small style="font-weight:600;opacity:.8">· voix, qualité graphique</small></span><span>${ic('right')}</span></button>
@@ -4849,12 +5379,12 @@ function startSessionNow(session) {
     T, laps: session === 'quali' ? 999 : wk.laps, realLaps: def.laps, role: wk.role, team, drv: Game.drv, session,
     aiOff: wk.role === 'pilot' ? AI_LV[wk.ai].off : 0, assist: wk.assist, grid, startComp: wk.comp,
     wearScale: clamp(def.laps / wk.laps * .85, 1, 8), weather: session === 'quali' ? { segs: wk.weather.segs.filter(x => x.from < 0).map(x => ({ ...x, to: 999 })) } : wk.weather,
-    incidents: Game.prefs.incidents !== false, qdur: QFMT.find(x => x.k === (wk.qfmt || 'court')).d,
+    incidents: Game.prefs.incidents !== false, formation: session === 'race' && !wk.multi && Game.prefs.formation !== false, qdur: QFMT.find(x => x.k === (wk.qfmt || 'court')).d,
     pitUpg: !wk.quick && s ? s.upg.pit : 0, relUpg: !wk.quick && s ? s.upg.rel : 0,
   });
   if (Game.world) Game.world.dispose();
   Game.world = new World(Game.race, Game.prefs.quality);
-  Radio.reset(); Radio.role = wk.role; Radio.prefs = Game.prefs; Radio.onPush = null;
+  Radio.reset(); Radio.role = wk.role; Radio.prefs = Game.prefs; Radio.onPush = null; Comm.reset();
   Game.multi = !!wk.multi; Game.host = Game.multi; Game.remote = false;
   Brain.init(Game.race, wk.role);
   Game.speed = 1; Game.paused = false; Game.ending = false; Game.secAcc = 0; Game.pilotView = Game.pilotView || 0;
@@ -4919,7 +5449,7 @@ function buildWall() {
         <button class="btn" data-q="Garde ta position, pas de bagarre.">Garde position</button>`}
       </div>
     </div></div>`;
-  Radio.mount($('.mon[data-i="0"]', el));
+  Radio.mount($('.mon[data-i="0"]', el)); Comm.mount($('.mon[data-i="0"]', el));
   Radio.onLog = () => { if (Game.mons.includes('radio')) updateMonitors(true); };
   $$('.mon', el).forEach(m => { $('select', m).onchange = e => { Game.mons[+m.dataset.i] = e.target.value; Game.monsSel = Game.mons.slice(); setupMonitor(m); }; setupMonitor(m); });
   $$('#w-speed button').forEach(b => b.onclick = () => { Game.speed = +b.dataset.v; $$('#w-speed button').forEach(x => x.classList.toggle('on', x === b)); });
@@ -5146,10 +5676,11 @@ function qLabel(r) { const q = r.q; return q.done ? 'Qualifications terminées' 
 function updateWallTop() {
   renderAsks();
   const r = Game.race, lead = r.order[0];
-  $('#w-lap').textContent = r.q ? qLabel(r) : r.phase === 'grid' ? 'Grille de départ' : `Tour ${Math.min(r.laps, Math.max(1, lead.lapsDone + 1))}/${r.laps}`;
+  $('#w-lap').textContent = r.q ? qLabel(r) : r.phase === 'formation' ? 'Tour de formation' : r.phase === 'grid' ? 'Grille de départ' : `Tour ${Math.min(r.laps, Math.max(1, lead.lapsDone + 1))}/${r.laps}`;
   const f = $('#w-flag');
   if (r.q) { const chq = r.q.chq || r.q.state !== 'run'; f.innerHTML = chq ? ic('chq') + ' FIN DE Q' + r.q.part : 'VERT'; f.style.background = chq ? '#fff' : '#1a8d4a'; f.style.color = chq ? '#000' : '#fff'; }
   else if (r.flag) { f.innerHTML = ic('chq') + ' DRAPEAU À DAMIER'; f.style.background = '#fff'; f.style.color = '#000'; }
+  else if (r.phase === 'formation') { f.textContent = 'FORMATION'; f.style.background = '#1a8d4a'; f.style.color = '#fff'; }
   else if (r.phase === 'grid') { f.textContent = 'FEUX'; f.style.background = '#E10600'; f.style.color = '#fff'; }
   else if (r.rc && r.rc.red) { f.textContent = 'DRAPEAU ROUGE'; f.style.background = '#e10600'; f.style.color = '#fff'; }
   else if (r.rc && r.rc.flag === 'sc') { f.textContent = 'SAFETY CAR'; f.style.background = '#ffd400'; f.style.color = '#000'; }
@@ -5174,7 +5705,8 @@ function buildCockpit() {
       <div class="hud-box"><span class="k">Pneus</span><div class="tyrew" id="ck-tyres"></div></div>
       <div class="hud-box" id="ck-wxbox"><span class="k">Météo</span><span class="v" id="ck-wx"></span></div>
     </div>
-    <div class="dash"><div class="spd num" id="ck-spd">0<small>KM/H</small></div><div class="gear num" id="ck-gear">N</div><div><div class="revs" id="ck-revs">${'<i></i>'.repeat(15)}</div><div class="muted" style="font-size:11px;font-weight:700" id="ck-mode"></div><div class="ers"><i id="ck-ers" style="width:100%"></i></div></div></div>
+    <div class="dash"><div class="spd num" id="ck-spd">0<small>KM/H</small></div><div class="gear num" id="ck-gear">N</div><div><div class="revs" id="ck-revs">${'<i></i>'.repeat(15)}</div><div class="muted" style="font-size:11px;font-weight:700" id="ck-mode"></div><div class="ersrow"><span class="ersk" id="ck-ersk">ERS</span><div class="ers"><i id="ck-ers" style="width:100%"></i></div><span class="num" id="ck-batp"></span></div></div>
+      <div class="ersbtns"><button class="btn small" id="ck-ersb" title="Mode ERS (touche E)">${ic('bolt')} <span>NORMAL</span></button><button class="btn small" id="ck-ovt" title="Overtake : à moins d'une seconde de la voiture devant (touche O)" disabled>OVERTAKE</button></div></div>
     <canvas class="minimap" id="ck-map"></canvas>
     <div class="hud-btns">
       <button class="ptt round" id="ck-ptt" title="Radio : maintiens (ou touche V) et parle">${ic('mic')}</button>
@@ -5188,11 +5720,15 @@ function buildCockpit() {
         <button class="btn small" id="ck-menu">${ic('pause')}</button>
       </div>
     </div>
+    ${!quali && r.phase === 'formation' ? `<button class="btn small skipf" id="ck-skipf">${ic('ff')} Passer le tour de formation</button>` : ''}
     ${quali ? `<button class="btn primary big qgo" id="ck-go" hidden>${ic('garage')} SORTIR EN PISTE</button>` : ''}
-    <div class="touch"><div class="tbtn" data-t="l" aria-label="Gauche">◀</div><div class="tbtn" data-t="r" aria-label="Droite">▶</div><div class="tbtn" data-t="b" aria-label="Frein">FREIN</div><div class="tbtn" data-t="t" aria-label="Accélérateur">GAZ</div></div>`;
-  Radio.mount($('#ck-view'));
+    <div class="touch"><div class="tbtn" data-t="l" aria-label="Gauche">${ic('left')}</div><div class="tbtn" data-t="r" aria-label="Droite">${ic('right')}</div><div class="tbtn" data-t="b" aria-label="Frein">FREIN</div><div class="tbtn" data-t="t" aria-label="Accélérateur">GAZ</div></div>`;
+  Radio.mount($('#ck-view')); Comm.mount($('#ck-view'));
   $('#ck-view').insertAdjacentHTML('beforeend', `<div class="lights" id="ck-lights" style="display:${quali ? 'none' : 'flex'}">${'<i></i>'.repeat(5)}</div><div class="bigmsg" id="ck-big"></div>`);
   $('#ck-view-btn').onclick = cycleView;
+  $('#ck-ersb').onclick = () => cycleERS();
+  $('#ck-ovt').onclick = () => useOvertake();
+  if ($('#ck-skipf')) $('#ck-skipf').onclick = () => { if (Game.race.phase === 'formation') Game.race.endFormation(); };
   $('#ck-menu').onclick = pauseMenu;
   $('#ck-auto').onclick = toggleAuto;
   if ($('#ck-flags')) $('#ck-flags').onclick = flagMenu;
@@ -5214,9 +5750,19 @@ function buildCockpit() {
   show('scr-cockpit');
   rebuildViews();
   if (Game.prefs.sound) Sfx.engineOn();
-  if (!quali) Brain.eng(me, `Bienvenue au ${gpName(def)}. ${wkWeatherLine()} Concentre-toi sur les feux.`);
+  if (!quali && r.phase !== 'formation') Brain.eng(me, `Bienvenue au ${gpName(def)}. ${wkWeatherLine()} Concentre-toi sur les feux.`);
 }
 function wkWeatherLine() { const s = Game.wk.weather.segs[0]; return !s ? 'Course au sec prévue.' : s.from < 0 ? 'La piste est mouillée.' : `Pluie possible vers le tour ${Math.max(1, Math.round(s.from))}.`; }
+function cycleERS() {
+  const r = Game.race, me = r.cars.find(c => c.isPlayer); if (!me) return;
+  const nx = { normal: 'boost', boost: 'harvest', harvest: 'normal', ovt: 'normal' }[me.ers];
+  r.setERS(me, nx); toast('ERS : ' + ERS[nx].n, 1100);
+}
+function useOvertake() {
+  const r = Game.race, me = r.cars.find(c => c.isPlayer); if (!me) return;
+  if (me.ers === 'ovt') { r.setERS(me, 'normal'); return; }
+  if (!r.setERS(me, 'ovt')) toast(me.bat < 8 ? 'Batterie trop faible pour l\'overtake' : 'Overtake : il faut être à moins d\'une seconde de la voiture devant', 1800);
+}
 function cycleView() { Game.pilotView = (Game.pilotView + 1) % 6; rebuildViews(); toast('Vue : ' + ['Caméra embarquée', 'Vue casque', 'T-cam', 'Poursuite', 'TV', 'Hélicoptère'][Game.pilotView], 1200); }
 function requestBox(k) {
   const r = Game.race, me = r.cars.find(c => c.isPlayer); if (!me) return;
@@ -5249,7 +5795,8 @@ function updateCockpit() {
   if (lights) { if (r.phase === 'grid') $$('i', lights).forEach((l, k) => l.classList.toggle('on', k < r.lights)); else if (lights.style.display !== 'none' && r.t > 1.2) lights.style.display = 'none'; else $$('i', lights).forEach(l => l.classList.remove('on')); }
   const big = $('#ck-big');
   big.className = 'bigmsg' + (r.flag && me.fin ? ' chequer' : '');
-  big.textContent = quali ? (r.q.state === 'break' || r.q.done ? (me.qOut && me.qOut < r.q.part ? '' : `P${me.pos}`) : '') : r.phase === 'race' && r.t < 1.5 ? 'GO !' : me.fin ? 'P' + me.pos : '';
+  if ($('#ck-skipf') && r.phase !== 'formation') $('#ck-skipf').remove();
+  big.textContent = r.phase === 'formation' ? 'TOUR DE FORMATION' : quali ? (r.q.state === 'break' || r.q.done ? (me.qOut && me.qOut < r.q.part ? '' : `P${me.pos}`) : '') : r.phase === 'race' && r.t < 1.5 ? 'GO !' : me.fin ? 'P' + me.pos : '';
   drawMiniMap();
 }
 function updateDash() {
@@ -5259,6 +5806,10 @@ function updateDash() {
   const n = Math.round(clamp((me.rpm - 6000) / 6000, 0, 1) * 15);
   $$('#ck-revs i').forEach((i, k) => i.className = k < n ? (k < 5 ? 'g' : k < 10 ? 'r' : 'b') : '');
   $('#ck-ers').style.width = me.bat + '%';
+  $('#ck-batp').textContent = Math.round(me.bat) + '%';
+  const em = me.bat <= .5 ? 'VIDE' : ERS[me.ers].n;
+  if (Game._ersM !== em) { Game._ersM = em; $('#ck-ersb span').textContent = me.ers === 'ovt' ? 'OVERTAKE' : ERS[me.ers].n; $('#ck-ersk').textContent = em; $('#ck-ersk').className = 'ersk ' + (me.bat <= .5 ? 'empty' : me.ers); }
+  const ob = $('#ck-ovt'); if (ob.disabled === me.ovtAvail) ob.disabled = !me.ovtAvail; ob.classList.toggle('on', me.ers === 'ovt');
 }
 function drawMiniMap() { const cv = $('#ck-map'); if (cv && cv.offsetParent) drawMap(cv, [Game.drv.code]); }
 function endQuali() {
@@ -5286,11 +5837,16 @@ function settingsModal(onClose) {
     const opts = sel => `<option value="">Automatique (meilleure voix)</option>` + vs.map(v => `<option value="${esc(v.name)}" ${v.name === sel ? 'selected' : ''}>${Speech.rank(v) >= 20 ? '★ ' : ''}${esc(v.name)}</option>`).join('');
     $('#modal-card').innerHTML = `<h3 style="font-size:22px;font-weight:900;font-style:italic;margin-bottom:12px">Réglages</h3>
       <div class="opts">
-        <div class="opt"><label>Voix fluide (neuronale)</label><div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">${!Neural.avail() ? (Neural.ios() ? '<span class="muted" style="font-size:13px">Désactivée sur iPad : elle prenait trop de mémoire avec la 3D et faisait planter le jeu.</span>' : '<span class="muted" style="font-size:13px">Disponible dans l\'appli installée (site), pas sur claude.ai.</span>') : Neural.st === 'ready' ? `<div class="seg" id="st-nn"><button data-v="1" class="${p.neural ? 'on' : ''}">Activée</button><button data-v="0" class="${!p.neural ? 'on' : ''}">Désactivée</button></div><button class="btn small" id="st-nt">▶</button>` : Neural.st === 'loading' ? `<span class="muted" id="st-np">Téléchargement… ${Math.round(Neural.prog * 100)} %</span>` : `<button class="btn small team" id="st-nd">Télécharger (≈ 65 Mo)</button>`}</div></div>
+        <div class="opt"><label>Voix fluide (neuronale)</label><div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">${!Neural.avail() ? (Neural.ios() ? '<span class="muted" style="font-size:13px">Désactivée sur iPad : elle prenait trop de mémoire avec la 3D et faisait planter le jeu.</span>' : '<span class="muted" style="font-size:13px">Disponible dans l\'appli installée (site), pas sur claude.ai.</span>') : Neural.st === 'ready' ? `<div class="seg" id="st-nn"><button data-v="1" class="${p.neural ? 'on' : ''}">Activée</button><button data-v="0" class="${!p.neural ? 'on' : ''}">Désactivée</button></div><button class="btn small" id="st-nt">${ic('play')}</button>` : Neural.st === 'loading' ? `<span class="muted" id="st-np">Téléchargement… ${Math.round(Neural.prog * 100)} %</span>` : `<button class="btn small team" id="st-nd">Télécharger (≈ 65 Mo)</button>`}</div></div>
         ${Neural.avail() ? `<p class="muted" style="font-size:13px;margin:0">Une vraie voix de synthèse neuronale, calculée sur l'iPad : beaucoup plus naturelle et fluide, avec un effet radio. Téléchargement unique (Wi-Fi conseillé), puis elle marche sans Internet.${Neural.st === 'error' ? ' <b style="color:var(--warn)">Échec : ' + esc(Neural.err) + '. Réessaie.</b>' : ''}</p>` : ''}
-        <div class="opt"><label for="st-ve">Voix de l'ingénieur</label><div style="display:flex;gap:6px;min-width:0"><select id="st-ve" class="btn" style="max-width:230px">${opts(p.voiceEng)}</select><button class="btn small" id="st-vet" aria-label="Écouter">▶</button></div></div>
-        <div class="opt"><label for="st-vd">Voix du pilote</label><div style="display:flex;gap:6px;min-width:0"><select id="st-vd" class="btn" style="max-width:230px">${opts(p.voiceDrv)}</select><button class="btn small" id="st-vdt" aria-label="Écouter">▶</button></div></div>
+        <div class="opt"><label for="st-ve">Voix de l'ingénieur</label><div style="display:flex;gap:6px;min-width:0"><select id="st-ve" class="btn" style="max-width:230px">${opts(p.voiceEng)}</select><button class="btn small" id="st-vet" aria-label="Écouter">${ic('play')}</button></div></div>
+        <div class="opt"><label for="st-vd">Voix du pilote</label><div style="display:flex;gap:6px;min-width:0"><select id="st-vd" class="btn" style="max-width:230px">${opts(p.voiceDrv)}</select><button class="btn small" id="st-vdt" aria-label="Écouter">${ic('play')}</button></div></div>
         <p class="muted" style="font-size:13px;margin:0">${vs.length ? vs.length + ' voix françaises trouvées.' : 'Aucune voix française trouvée pour l\'instant.'} Pour des voix bien plus humaines sur iPad : <b>Réglages de l'iPad → Accessibilité → Contenu énoncé → Voix → Français</b>, puis télécharge une voix « Améliorée » ou « Premium » (par exemple Thomas, Audrey ou Aurélie). Reviens ici : elle apparaît avec une ★.</p>
+        <div class="opt"><label>Commentateur TV</label><div class="seg" id="st-cm"><button data-v="1" class="${p.comm ? 'on' : ''}">Oui</button><button data-v="0" class="${!p.comm ? 'on' : ''}">Non</button></div></div>
+        ${p.comm ? `<div class="opt"><label for="st-vc">Voix du commentateur</label><div style="display:flex;gap:6px;min-width:0"><select id="st-vc" class="btn" style="max-width:230px">${opts(p.voiceComm)}</select><button class="btn small" id="st-vct" aria-label="Écouter">${ic('play')}</button></div></div>` : ''}
+        <p class="muted" style="font-size:13px;margin:0">Un commentateur en français, façon direct à la télé : départ, dépassements, arrêts, accidents, safety car, arrivée et podium. Il se tait quand la radio parle. Choisis-lui une voix d'homme dynamique (par exemple Thomas en « Améliorée »).</p>
+        <div class="opt"><label>Tour de formation</label><div class="seg" id="st-fm"><button data-v="1" class="${p.formation !== false ? 'on' : ''}">Oui</button><button data-v="0" class="${p.formation === false ? 'on' : ''}">Non</button></div></div>
+        <div class="opt"><label>Cérémonie du podium</label><div class="seg" id="st-pd"><button data-v="1" class="${p.podium !== false ? 'on' : ''}">Oui</button><button data-v="0" class="${p.podium === false ? 'on' : ''}">Non</button></div></div>
         <div class="opt"><label>Micro toujours prêt</label><div class="seg" id="st-mk"><button data-v="1" class="${p.micKeep !== false ? 'on' : ''}">Oui</button><button data-v="0" class="${p.micKeep === false ? 'on' : ''}">Non</button></div></div>
         <p class="muted" style="font-size:13px;margin:0">Oui : pas de gel quand tu appuies sur le micro. Si les voix sont hachées sur ton iPad, mets Non : les voix sont plus fluides, mais un court gel peut revenir à chaque appui.</p>
         <div class="opt"><label>Voix à la radio</label><div class="seg" id="st-v"><button data-v="1" class="${p.voice ? 'on' : ''}">Activées</button><button data-v="0" class="${!p.voice ? 'on' : ''}">Texte seul</button></div></div>
@@ -5320,6 +5876,9 @@ function settingsModal(onClose) {
     seg('st-ts', v => p.trackStyle = v);
     seg('st-dc', v => p.decor = v);
     seg('st-nn', v => p.neural = v === '1');
+    seg('st-cm', v => { p.comm = v === '1'; if (!p.comm) { Comm.q = []; Comm.cut(); } });
+    seg('st-fm', v => p.formation = v === '1'); seg('st-pd', v => p.podium = v === '1');
+    if ($('#st-vc')) { $('#st-vc').onchange = e => { p.voiceComm = e.target.value; Store.savePrefs(p); }; $('#st-vct').onclick = () => Speech.test('comm'); }
     seg('st-mk', v => { p.micKeep = v === '1'; if (!p.micKeep && !Mic.gate) Mic.shutdown(); });
     $('#st-ok').onclick = () => { $('#modal').classList.remove('on'); onClose && onClose(); };
   };
@@ -5353,7 +5912,8 @@ function pauseMenu() {
   $('#p-set').onclick = () => settingsModal(() => { if (!Game.multi) Game.paused = false; Game.last = performance.now(); });
   $('#p-quit').onclick = () => { $('#modal').classList.remove('on'); Game.paused = false; stopRace(); if (Game.multi) { Net.send('bye', {}); Game.remote = Game.host = false; return renderLobby(); } if (quali) renderWeekend(); else Game.wk.quick ? renderSetup('quick') : renderHub(); };
 }
-function finishRace() {
+function finishRace(skipCine) {
+  if (!skipCine && !Game.multi && Game.world && Game.prefs.podium !== false) return startPodium(Game.race.classify(), () => finishRace(true));
   const r = Game.race, rows = r.classify(), wk = Game.wk;
   if (Game.host) Host.end(rows, r);
   stopRace();
@@ -5409,10 +5969,11 @@ window.addEventListener('keydown', e => {
   Input.keys[e.code] = true;
   if (!Game.race || !Game.raf) return;
   if (/^Arrow/.test(e.code)) e.preventDefault();
+  if (Game.cine) { if (e.code === 'Escape' || e.code === 'Enter') Game.cine.end(); return; }
   if (e.code === 'Escape') { $('#modal').classList.contains('on') ? $('#p-res')?.click() : pauseMenu(); }
   if (e.repeat) return;
   if (e.code === 'KeyV') { const b = Game.role === 'pilot' ? $('#ck-ptt') : $('#w-ptt'); if (b && !Mic.gate) b.dispatchEvent(new PointerEvent('pointerdown')); }
-  if (Game.role === 'pilot') { if (e.code === 'KeyC') cycleView(); if (e.code === 'KeyB') requestBox(); if (e.code === 'KeyP') toggleAuto(); if (e.code === 'KeyF' && Game.race.session === 'race') flagMenu(); if (/^Digit[1-5]$/.test(e.code)) requestBox(CK[+e.code.slice(5) - 1]); }
+  if (Game.role === 'pilot') { if (e.code === 'KeyC') cycleView(); if (e.code === 'KeyB') requestBox(); if (e.code === 'KeyP') toggleAuto(); if (e.code === 'KeyE') cycleERS(); if (e.code === 'KeyO') useOvertake(); if (e.code === 'KeyF' && Game.race.session === 'race') flagMenu(); if (/^Digit[1-5]$/.test(e.code)) requestBox(CK[+e.code.slice(5) - 1]); }
   else if (/^Digit[1-4]$/.test(e.code) && !Game.multi) { const v = [1, 2, 4, 8][+e.code.slice(5) - 1]; $(`#w-speed button[data-v="${v}"]`)?.click(); }
 });
 window.addEventListener('keyup', e => { Input.keys[e.code] = false; if (e.code === 'KeyV' && Mic.gate) { Mic.stop(); $$('.ptt.live').forEach(b => b.classList.remove('live')); } });
@@ -5443,9 +6004,10 @@ function frame(now) {
     }
   }
   if (Game.remote) w.tvDirector(rdt, r.cars.filter(c => c.team === Game.team));
+  if (Game.cine) { Game.cine.t += rdt; w.stepPodium(rdt); if (Game.cine.t > 30) Game.cine.end(); if (!Game.world) return; }
   w.sync(rdt);
   w.render(Game.views, rdt);
-  engineAudio(r, w, rdt);
+  if (!Game.cine) engineAudio(r, w, rdt);
   if (pilot) updateDash();
   if (now - Game.uiT > 130) {
     Game.uiT = now;
@@ -5467,7 +6029,12 @@ function engineAudio(r, w, dt) {
     pitch = clamp(340 / (340 + vr), .75, 1.3); w._aud = { c: best, d: bd };
   } else vol = t === 'chase' ? .7 : 1;
   const squeal = best.isPlayer ? best.slide || 0 : 0;
-  Sfx.engine(best.rpm || 4000, best.thr || 0, (Game.role === 'pilot' ? 1 : .6) * vol, pitch, squeal, r.rain);
+  // deuxième voix : la voiture la plus proche de la caméra (on l'entend arriver et s'éloigner)
+  let other = null;
+  { let bd = 1e9, oc = null; const p = cam.position; for (const [x] of w.cars) { if (x === best || x.dnf || (x.pit && x.v < 1)) continue; const d = Math.hypot(x.x - p.x, x.z - p.z); if (d < bd) { bd = d; oc = x; } }
+    if (oc && bd < 160) { const prev = w._aud2 && w._aud2.c === oc ? w._aud2.d : bd, vr = dt > 0 ? (bd - prev) / dt : 0; w._aud2 = { c: oc, d: bd };
+      other = { rpm: oc.rpm || 8000, thr: oc.thr || 0, gear: oc.gear, vol: clamp(22 / (bd + 6), 0, .8) * (inside ? .55 : 1) * (Game.role === 'pilot' ? 1 : .6), pitch: clamp(340 / (340 + vr), .7, 1.35) }; } }
+  Sfx.engine(best.rpm || 4000, best.thr || 0, (Game.role === 'pilot' ? 1 : .6) * vol, pitch, squeal, r.rain, { gear: best.gear, v: inside ? best.v : 0, other });
 }
 
 /* ---------------- INIT ---------------- */
