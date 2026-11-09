@@ -20,6 +20,7 @@
   Tracés des circuits : bacinger/f1-circuits (licence MIT, © Tomislav Bacinger).
   Voiture 3D : « 2026 Redbull RB22 » par Dave Love (sketchfab.com), licence CC BY 4.0 — modifiée (allégée, roues remplacées, livrées recolorées).
   Décor : « Cartoon Race Track - Oval » par RCC Design (sketchfab.com), licence CC BY 4.0 — objets allégés et replacés.
+  Roues : « Formula 1 2012 Wheel » par Maxence Leret d'Aubigny (sketchfab.com), licence CC BY 4.0 — allégées, flancs recolorés selon la gomme.
   Safety Car : « 2019 Mercedes-Benz AMG GTR Safety Car » par OUTPISTON (sketchfab.com), licence CC BY-NC-SA 4.0 (textures recompressées).
   Jeu de fan non officiel : aucun lien avec la Formula 1, la FIA ou les écuries.
 -->
@@ -378,6 +379,17 @@ table.std td.r, table.std th.r { text-align: right; }
 .twrap > .trow.gain, .twrap > .trow.lose { background-color: #0b0e13; }
 .twrap > .trow.gain { background-image: linear-gradient(90deg, rgba(43,214,123,.45), transparent 85%); }
 .twrap > .trow.lose { background-image: linear-gradient(90deg, rgba(255,42,31,.45), transparent 85%); }
+.ersfab { position: absolute; right: max(12px, env(safe-area-inset-right)); bottom: calc(max(12px, env(safe-area-inset-bottom)) + clamp(110px, 40vh, 280px) + 14px); width: clamp(76px, 13vw, 150px); display: flex; justify-content: center; gap: 10px; pointer-events: none; }
+.rbtn { pointer-events: auto; width: 62px; height: 62px; border-radius: 50%; border: 2px solid rgba(255,255,255,.35); background: rgba(16,20,27,.8); color: #2BD67B; font-weight: 900; font-size: 10px; letter-spacing: .04em; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; }
+.rbtn .ic { width: 20px; height: 20px; }
+.rbtn.boost { color: #ffd400; border-color: #ffd400; } .rbtn.harvest { color: #36c2ff; border-color: #36c2ff; } .rbtn.ovt.on, .rbtn.ovt.on[disabled] { background: #ff3df2; color: #000; }
+.rbtn.ovt { color: #ff9cf7; font-size: 12px; } .rbtn.ovt:not([disabled]) { background: #8a1f86; border-color: #ff3df2; color: #fff; } .rbtn[disabled] { opacity: .45; }
+.has-touch .ersbtns { display: none; }
+.bigmsg.small { font-size: clamp(20px, 3.4vw, 34px); top: 46%; }
+.qbreak { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 60; background: rgba(10,12,18,.94); border: 1px solid var(--line); border-top: 4px solid var(--red); border-radius: 14px; padding: 18px 22px; display: grid; gap: 10px; justify-items: center; text-align: center; max-width: min(460px, 90vw); box-shadow: 0 20px 60px rgba(0,0,0,.6); }
+.qbreak .kicker { font-size: 22px; font-weight: 900; font-style: italic; color: #fff; }
+.qb-mine { display: grid; gap: 4px; } .qb-mine span { border-left: 4px solid var(--c); padding-left: 8px; font-weight: 700; }
+.qb-out { font-size: 13px; }
 </style>
 </head>
 <body>
@@ -765,7 +777,7 @@ class Race {
     this.tmp = {};
     if (this.session === 'quali') this.qualiInit(o.qdur || [360, 300, 240]);
     for (const c of this.cars) { c.slot = c.dist; c.d0 = c.d; }
-    if (this.phase === 'formation') { for (const c of this.cars) { c.wasManual = c.manual; c.manual = false; } this.ev.push({ k: 'formstart' }); }
+    if (this.phase === 'formation') { for (const c of this.cars) { c.wasManual = c.manual; if (!c.isPlayer) c.manual = false; } this.ev.push({ k: 'formstart' }); }
     this.cars.forEach(c => this.placeAI(c));
   }
   /* ---------- QUALIFICATIONS : Q1 / Q2 / Q3 chronométrées, tout le plateau en piste ---------- */
@@ -1045,10 +1057,11 @@ class Race {
     return 'H';
   }
   // Tour de formation : la file suit le poleman, zigzag pour chauffer les pneus, puis chacun reprend sa place
-  formStep(dt) {
+  formStep(dt, inp) {
     const T = this.T, L = T.L; this.fT += dt;
     const ord = this.cars.slice().sort((a, b) => a.gp - b.gp);
     ord.forEach((c, k) => {
+      if (c.isPlayer && c.manual) return this.formPlayer(c, ord[k - 1], dt, inp || { thr: 0, brk: 0, steer: 0 });
       const s = mod(c.dist, L), idx = Math.floor(s / T.ds) % T.N, slot = c.slot + L, rem = slot - c.dist, prog = (c.dist - c.slot) / L;
       let vt = Math.min(52, Math.min(T.vp[idx], T.vp[(idx + 3) % T.N]) * .62);
       const a = ord[k - 1];
@@ -1057,7 +1070,7 @@ class Race {
       if (this.fT < 1 + c.gp * .35) vt = 0;
       if (vt > c.v) { c.v = Math.min(vt, c.v + aAcc(c.v) * dt * .6); c.thr = .6; c.brk = 0; } else { c.v = Math.max(0, c.v - Math.min(aDec(c.v), (c.v - vt) / dt) * dt); c.thr = 0; c.brk = c.v - vt > 2 ? .4 : 0; }
       c.dist = Math.min(slot, c.dist + c.v * dt);
-      if (rem < .4 && c.v < .5) c.formDone = true;
+      if ((rem < .4 || (rem < 8 && this.fT > 20)) && c.v < .5 && (!ord[k - 1] || ord[k - 1].formDone)) c.formDone = true;
       const weave = prog < .82 && T.vp[idx] > 55 ? Math.sin(this.fT * 1.7 + c.gp) * 2.4 : 0;
       const dT = prog < .82 ? clamp(T.line[idx] * .4 + weave, -T.hw + 1.4, T.hw - 1.4) : c.d0;
       const prev = c.d; c.d += clamp(dT - c.d, -2.5 * dt, 2.5 * dt); c.dVel = (c.d - prev) / Math.max(dt, 1e-3);
@@ -1066,20 +1079,34 @@ class Race {
       const G = [0, 19, 29, 39, 49, 59, 69, 79, 999]; let g = 1; while (g < 8 && c.v > G[g]) g++; c.gear = c.v < .5 ? 1 : g;
       c.rpm = c.v < .5 ? 5000 : 6000 + 5000 * clamp((c.v - G[g - 1]) / (G[g] - G[g - 1] || 10), 0, 1);
     });
-    if (this.cars.every(c => c.formDone || c.dnf) || this.fT > T.T0 * 3) this.endFormation();
+    const me = this.cars.find(c => c.isPlayer && c.manual); if (me) this.playerCollide(me);
+    if (this.cars.every(c => c.formDone || c.dnf) || this.fT > T.T0 * 3.5) this.endFormation();
+  }
+  // le joueur pilote lui-même son tour de formation : vitesse limitée, pas de dépassement, il s'arrête sur son emplacement
+  formPlayer(c, a, dt, inp) {
+    const T = this.T, L = T.L, slot = c.slot + L;
+    this.playerStep(c, dt, inp);
+    if (c.v > 55) c.v = 55;
+    if (a) { const gap = a.dist - c.dist; if (gap < 9) { c.v = Math.min(c.v, a.v * .9); if (gap < 6) c.v = Math.min(c.v, a.v * .5); } }
+    const rem = slot - c.dist; c.formRem = rem;
+    if (rem < 60 && rem > -20) c.v = Math.min(c.v, Math.max(3, Math.sqrt(2 * 6 * Math.max(0, rem)) + 2));
+    if (Math.abs(rem) < 7 && c.v < .6) c.formDone = true;
+    for (let q = 0; q < 4; q++) c.temps[q] += ((Math.abs(c.steer) > .3 ? 90 : 80) - c.temps[q]) * Math.min(1, dt * .08);
+    const G = [0, 19, 29, 39, 49, 59, 69, 79, 999]; let g = 1; while (g < 8 && c.v > G[g]) g++; c.gear = c.v < .5 ? 1 : g;
+    c.rpm = c.v < .5 ? 5000 + c.thr * 5000 : 6000 + 5000 * clamp((c.v - G[g - 1]) / (G[g] - G[g - 1] || 10), 0, 1);
   }
   endFormation() {
     for (const c of this.cars) {
       c.dist = c.slot; c.v = 0; c.d = c.d0; c.dVel = 0; this.placeAI(c);
       c.started = false; c.lapStart = 0; c.cp = -1; c.lapsDone = 0;
-      if (c.wasManual) { c.manual = true; c.ps = mod(c.dist, this.T.L); }
+      if (c.wasManual) { c.manual = true; c.ps = mod(c.dist, this.T.L); c.h = this.tmp.h; c.rv = 0; c.prevLat = c.d; }
     }
     this.cpLead = []; this.phase = 'grid'; this.lightT = 0; this.lights = 0; this.t = 0;
     this.ev.push({ k: 'formend' });
   }
   update(dt, inp) {
     const T = this.T, L = T.L;
-    if (this.phase === 'formation') { this.formStep(dt); return; }
+    if (this.phase === 'formation') { this.formStep(dt, inp); return; }
     if (this.phase === 'grid') {
       this.lightT += dt;
       this.lights = Math.min(5, Math.floor(this.lightT - 0.6));
@@ -1233,7 +1260,7 @@ class Race {
   }
   playerStep(c, dt, inp) {
     const T = this.T, L = T.L;
-    if (this.phase !== 'race') { c.v = 0; return; }
+    if (this.phase !== 'race' && this.phase !== 'formation') { c.v = 0; return; }
     const i = c.ti = nearestIdx(T, c.x, c.z, c.ti, 10); // recherche locale : jamais de saut vers une autre portion
     const dx = c.x - T.px[i], dz = c.z - T.pz[i];
     const lat = dx * T.nx[i] + dz * T.nz[i], al = dx * T.tx[i] + dz * T.tz[i];
@@ -1245,7 +1272,7 @@ class Race {
     const nearEntry = u < 150 || u > L - 60;
     const latV = (lat - (c.prevLat ?? lat)) / Math.max(dt, 1e-3); c.prevLat = lat;
     const drivesIn = (u < 140 || u > L - 60) && ((lat * T.pitSide > T.hw + .6) || (lat * T.pitSide > T.hw - 1.2 && latV * T.pitSide > 1.2));
-    if ((c.pitReq || drivesIn) && nearEntry && c.dist > 0 && !c.fin && c.lastPitLap !== c.lapsDone && !c.pit) {
+    if (this.phase === 'race' && (c.pitReq || drivesIn) && nearEntry && c.dist > 0 && !c.fin && c.lastPitLap !== c.lapsDone && !c.pit) {
       if (this.q) this.qualiBox(c);
       if (!c.pitReq) { c.pitReq = true; c.pitComp = c.pitComp || this.autoComp(c); }
       c.manual = false; c.autoPit = true; c.dVel = 0; c.pu = u;
@@ -1278,12 +1305,16 @@ class Race {
     let a = thr * aAccE(c.v, pf) * (off ? .5 : 1) - brk * aDec(c.v) * Math.min(1, g * 1.05) - (off ? 3 + c.v * .06 : 0) - (thr < .05 && brk < .05 ? .8 + c.v * .02 : 0);
     c.v = Math.max(0, c.v + a * dt);
     if (c.fin) c.v = Math.min(c.v, 45);
-    let r = c.v * Math.tan(st * maxSt) / 3.6;
+    // marche arrière : à l'arrêt, maintenir le frein fait reculer doucement
+    if (c.v < .2 && brk > .5 && thr < .1 && !c.pit) c.rv = Math.max(-4.5, (c.rv || 0) - 2.8 * dt);
+    else c.rv = (c.rv || 0) < 0 ? Math.min(0, c.rv + (thr > .1 ? 12 : 4) * dt) : 0;
+    const ve = c.v + c.rv;
+    let r = ve * Math.tan(st * maxSt) / 3.6;
     const aMax = aLat(c.v) * g, aReq = Math.abs(r * c.v);
     c.slide = 0;
     if (aReq > aMax && c.v > 1) { c.slide = Math.min(1, (aReq - aMax) / aMax); r *= aMax / aReq; c.v = Math.max(0, c.v - c.slide * 9 * dt); }
     c.h = wrapA(c.h - r * dt);
-    c.x += Math.sin(c.h) * c.v * dt; c.z += Math.cos(c.h) * c.v * dt;
+    c.x += Math.sin(c.h) * ve * dt; c.z += Math.cos(c.h) * ve * dt;
     // murs / barrières
     const uW = mod(i * T.ds - (L - T.pitIn), L), pitZone = uW < T.pitLen && Math.sign(lat) === T.pitSide;
     let wall = pitZone ? Math.max(lat >= 0 ? T.wallP[i] : T.wallN[i], T.pitOff + 5) : (lat >= 0 ? T.wallP[i] : T.wallN[i]);
@@ -2395,9 +2426,9 @@ class World {
       }
       m.lift = lerp(m.lift || 0, lift, Math.min(1, dt * 30)); m.roll = lerp(m.roll || 0, roll, Math.min(1, dt * 30));
       m.g.position.y += m.lift; m.g.rotation.z = m.roll;
-      if (m.comp !== c.comp) { m.comp = c.comp; if (m.hq) { m.ringMat.map = sidewallTex(c.comp); m.ringMat.map.encoding = THREE.sRGBEncoding; m.ringMat.needsUpdate = true; } else m.ringMat.color.set(COMP[c.comp].c).convertSRGBToLinear(); }
+      if (m.comp !== c.comp) { m.comp = c.comp; if (m.sides && m.sides.length) { const sm = WheelGLB.sideMat(c.comp); m.sides.forEach(x => x.material = sm); } if (m.hq) { m.ringMat.map = sidewallTex(c.comp); m.ringMat.map.encoding = THREE.sRGBEncoding; m.ringMat.needsUpdate = true; } else m.ringMat.color.set(COMP[c.comp].c).convertSRGBToLinear(); }
       // roues qui tournent et braquent
-      m.spin = (m.spin + c.v * dt / .37) % (Math.PI * 2);
+      m.spin = (m.spin + (c.v + (c.rv || 0)) * dt / .37) % (Math.PI * 2);
       const st = c.manual ? -(c.steer || 0) * .35 : -Math.atan(3.6 * (T.k[c.ti] || 0)) * 1.2;
       m.wheels.forEach((wh, k) => { wh.w.rotation.x = m.spin; if (k < 2) wh.pivot.rotation.y = clamp(st, -.4, .4); });
       m.rainL.material.color.copy(r.w > .15 && blink ? this.cRed : this.cRain);
@@ -2802,12 +2833,19 @@ function makeCarHQ(c, Q) {
   const F = CarGLB.WF, R = CarGLB.WR;
   const WL = glb ? [[F.x, F.y, F.z, G.wheelF, F.r, F.w, 1, .36, .36], [-F.x, F.y, F.z, G.wheelF, F.r, F.w, -1, .36, .36], [R.x, R.y, R.z, G.wheelR, R.r, R.w, 1, .39, .46], [-R.x, R.y, R.z, G.wheelR, R.r, R.w, -1, .39, .46]]
     : [[.88, .36, 1.75, G.wheelF, .36, .36, 1], [-.88, .36, 1.75, G.wheelF, .36, .36, -1], [.86, .39, -1.65, G.wheelR, .39, .46, 1], [-.86, .39, -1.65, G.wheelR, .39, .46, -1]];
+  const wglb = WheelGLB.st === 'ready', sides = [];
   const wheels = WL.map(([x, y, z, geo, r, wd, s, r0, w0]) => {
     const pivot = new THREE.Group(); pivot.position.set(x, y, z); g.add(pivot);
     const w = new THREE.Group(); pivot.add(w);
-    const ty = new THREE.Mesh(geo, tyreM); ty.castShadow = sh; if (r0) ty.scale.set(wd / w0, r / r0, r / r0); w.add(ty);
-    const cv = new THREE.Mesh(G.cover, coverM); cv.scale.setScalar(r * .63); cv.position.x = s * wd * .42; cv.rotation.y = s * Math.PI / 2; w.add(cv);
-    const sd = new THREE.Mesh(G.side, ringMat); sd.scale.setScalar(r); sd.position.x = s * (wd / 2 + .004); sd.rotation.y = s * Math.PI / 2; w.add(sd);
+    // roue simple (de loin) ; roue importée détaillée de près
+    const simple = new THREE.Group();
+    const ty = new THREE.Mesh(geo, tyreM); ty.castShadow = sh; if (r0) ty.scale.set(wd / w0, r / r0, r / r0); simple.add(ty);
+    const cv = new THREE.Mesh(G.cover, coverM); cv.scale.setScalar(r * .63); cv.position.x = s * wd * .42; cv.rotation.y = s * Math.PI / 2; simple.add(cv);
+    const sd = new THREE.Mesh(G.side, ringMat); sd.scale.setScalar(r); sd.position.x = s * (wd / 2 + .004); sd.rotation.y = s * Math.PI / 2; simple.add(sd);
+    if (wglb) {
+      const det = WheelGLB.build(c.comp, r, wd, s, sh); sides.push(...det.userData.side);
+      const lod = new THREE.LOD(); lod.addLevel(det, 0); lod.addLevel(simple, Q >= 3 ? 45 : Q >= 2 ? 28 : 16); w.add(lod);
+    } else w.add(simple);
     return { pivot, w, r: y };
   });
   add(G.helmet, new THREE.MeshPhysicalMaterial({ map: helmetTex(t, d), roughness: .25, clearcoat: 1, clearcoatRoughness: .05 }), 0, .85, .1);
@@ -2816,12 +2854,64 @@ function makeCarHQ(c, Q) {
   const rainL = new THREE.Mesh(G.rain, new THREE.MeshBasicMaterial({ color: 0x330000 })); if (glb) rainL.position.set(0, .27, -2.47); else rainL.position.set(0, .26, -2.98); g.add(rainL);
   const shd = new THREE.Mesh(G.shadow, new THREE.MeshBasicMaterial({ color: 0, transparent: true, opacity: sh ? .25 : .45, depthWrite: false, map: TEX.soft }));
   shd.rotation.x = -Math.PI / 2; shd.position.y = .04; g.add(shd);
-  return { g, ringMat, comp: c.comp, wheels, rainL, spin: 0, hq: true, glb };
+  return { g, ringMat, comp: c.comp, wheels, rainL, spin: 0, hq: true, glb, sides };
 }
 /* ---------------- MODÈLE 3D DÉTAILLÉ ----------------
    « 2026 Redbull RB22 » par Dave Love (Sketchfab), licence CC BY 4.0, allégé pour l'iPad.
    Roues retirées du modèle : on y monte nos roues animées (couleur du pneu).
    Livrée recolorée pour chaque écurie. Chargé seulement sur le site (pas sur claude.ai). */
+/* ---------------- ROUE IMPORTÉE ----------------
+   « Formula 1 2012 Wheel » par Maxence Leret d'Aubigny (Sketchfab), licence CC BY 4.0, allégée pour l'iPad.
+   Bande de couleur du flanc repeinte selon la gomme : tendre rouge, medium jaune, dur blanc, inter vert, pluie bleu. */
+const WheelGLB = {
+  st: 'off', parts: null, hw: .4, mats: {},
+  init() {
+    if (this.st !== 'off') return this.p;
+    if (!CarGLB.avail()) { this.st = 'na'; return this.p = Promise.resolve(); }
+    this.st = 'loading';
+    this.p = Kit.loader().then(() => new Promise(res => new THREE.GLTFLoader().load('wheel.glb', g => {
+      try {
+        g.scene.updateMatrixWorld(true);
+        const parts = []; const bb = new THREE.Box3();
+        g.scene.traverse(o => { if (!o.isMesh) return; const geo = o.geometry.clone(); geo.applyMatrix4(o.matrixWorld); geo.computeBoundingBox(); parts.push({ geo, mat: o.material, name: o.material.name }); if (/Tyre|Bande/.test(o.material.name)) bb.union(geo.boundingBox); });
+        // centre sur l'axe, rayon 1, axe de rotation selon x
+        const c = bb.getCenter(new THREE.Vector3()), R = (bb.max.y - bb.min.y) / 2;
+        for (const p of parts) { p.geo.translate(-c.x, -c.y, -c.z); p.geo.scale(1 / R, 1 / R, 1 / R); p.geo.computeBoundingSphere(); p.mat.side = THREE.FrontSide; }
+        this.hw = (bb.max.x - bb.min.x) / 2 / R;
+        this.parts = parts; this.st = 'ready';
+      } catch (e) { this.err = e.message; this.st = 'error'; }
+      res();
+    }, null, e => { this.err = String(e && e.message || e); this.st = 'error'; res(); }))).catch(() => { this.st = 'error'; });
+    return this.p;
+  },
+  wait(ms = 15000) { return this.st === 'loading' ? Promise.race([this.p, new Promise(r => setTimeout(r, ms))]) : Promise.resolve(); },
+  // flanc repeint : la bande jaune d'origine prend la couleur de la gomme
+  sideMat(k) {
+    if (this.mats[k]) return this.mats[k];
+    const src = this.parts.find(p => /Tyre-sides/.test(p.name)); if (!src) return null;
+    const m = src.mat.clone();
+    if (k !== 'M' && src.mat.map && src.mat.map.image) {
+      const img = src.mat.map.image, W = Math.min(512, img.width || 512), cv = document.createElement('canvas'); cv.width = cv.height = W;
+      const g = cv.getContext('2d'); g.drawImage(img, 0, 0, W, W);
+      const id = g.getImageData(0, 0, W, W), d = id.data, col = new THREE.Color(COMP[k].c), to = [col.r * 255, col.g * 255, col.b * 255];
+      for (let i = 0; i < d.length; i += 4) {
+        const r = d[i], gg = d[i + 1], b = d[i + 2];
+        if (r > 110 && gg > 85 && r - b > 60 && gg - b > 40 && Math.abs(r - gg) < 90) { const l = Math.min(1.15, (r + gg) / 2 / 215); d[i] = Math.min(255, to[0] * l); d[i + 1] = Math.min(255, to[1] * l); d[i + 2] = Math.min(255, to[2] * l); }
+      }
+      g.putImageData(id, 0, 0);
+      const t = new THREE.CanvasTexture(cv); t.flipY = src.mat.map.flipY; t.encoding = THREE.sRGBEncoding; t.anisotropy = 4; m.map = t;
+    }
+    return this.mats[k] = m;
+  },
+  // roue complète, rayon r, largeur wd ; s = côté (+1 droite, -1 gauche : jante vers l'extérieur)
+  build(k, r, wd, s, sh) {
+    const g = new THREE.Group(), side = [];
+    for (const p of this.parts) { const isSide = /Tyre-sides/.test(p.name); const me = new THREE.Mesh(p.geo, isSide ? this.sideMat(k) : p.mat); me.castShadow = sh; g.add(me); if (isSide) side.push(me); }
+    g.scale.set(s * wd / 2 / this.hw, r, r);
+    g.userData.side = side;
+    return g;
+  },
+};
 const CarGLB = {
   st: 'off', hi: null, lo: null, teamMats: {}, num: {},
   // position et taille des roues du modèle (mètres, avant = +z)
@@ -4114,7 +4204,7 @@ const Brain = {
       }
       case 'restart': if (typeof rcBanner === 'function') rcBanner('Drapeau vert — la course reprend'); { const c = pilot ? me : r.cars.find(x => this.mine(x) && !x.dnf); if (c) (pilot && c.isPlayer) ? this.eng(c, 'Vert, vert, vert ! Attaque !', { sys: true }) : this.drv(c, 'C\'est reparti !'); } break;
       case 'formstart':
-        if (pilot) this.eng(me, `Bienvenue au ${gpName(TRACKS[Game.wk.gp])}. ${wkWeatherLine()} Tour de formation : chauffe les pneus en zigzaguant dans les lignes droites, et les freins. Reste derrière la voiture devant, pas de dépassement.`);
+        if (pilot) this.eng(me, `Bienvenue au ${gpName(TRACKS[Game.wk.gp])}. ${wkWeatherLine()} Tour de formation, c'est toi qui pilotes : chauffe les pneus en zigzaguant et les freins, reste derrière la voiture devant, pas de dépassement. À la fin du tour, arrête-toi sur ton emplacement de la grille.`);
         else this.later(() => this.drv(r.cars.find(x => x.team === r.myTeam), pick(['Tour de formation, je chauffe les pneus.', 'Radio check, tout est bon de mon côté.', 'Les freins sont un peu froids, je les chauffe.'])), 3);
         break;
       case 'formend':
@@ -5377,9 +5467,9 @@ function renderWeekend() {
 
 /* ---------------- DÉMARRAGE D'UNE SESSION ---------------- */
 function startSession(session) {
-  if (CarGLB.st !== 'loading' && Kit.st !== 'loading' && SafetyGLB.st !== 'loading') return startSessionNow(session);
+  if (CarGLB.st !== 'loading' && Kit.st !== 'loading' && SafetyGLB.st !== 'loading' && WheelGLB.st !== 'loading') return startSessionNow(session);
   toast('Chargement des voitures et du décor…');
-  Promise.all([CarGLB.wait(), Kit.wait(), SafetyGLB.wait()]).then(() => startSessionNow(session));
+  Promise.all([CarGLB.wait(), Kit.wait(), SafetyGLB.wait(), WheelGLB.wait()]).then(() => startSessionNow(session));
 }
 function startSessionNow(session) {
   const wk = Game.wk, T = getTrack(wk.gp), def = TRACKS[wk.gp], team = TEAM[wk.team];
@@ -5406,6 +5496,7 @@ function startSessionNow(session) {
   cancelAnimationFrame(Game.raf); Game.raf = requestAnimationFrame(frame);
 }
 function stopRace() {
+  if ($('#qbreak')) $('#qbreak').remove();
   cancelAnimationFrame(Game.raf); Game.raf = 0; Sfx.engineOff(); Sfx.hiss(false); Speech.stop(); Mic.shutdown();
   if (Game.world) { Game.world.dispose(); Game.world = null; }
   Radio.reset(); Radio.onPush = null;
@@ -5551,7 +5642,7 @@ function renderTower(el, full) {
     const s = mv[c.code] || (mv[c.code] = { p: i + 1, d: 0, n: 0, t: -1e9 });
     if (s.p !== i + 1) { if (!first) { const n = s.p - (i + 1); s.n = s.d && Math.sign(n) === s.d && (now - s.t) / 1000 < SLIDE ? s.n + n : n; s.d = Math.sign(n); s.t = now; } s.p = i + 1; }
     const age = (now - s.t) / 1000, act = s.d !== 0 && age < SLIDE + .05;
-    const mvHTML = act ? `<span class="mv ${s.d > 0 ? 'up' : 'dn'}" style="transform:scale(${(1 + .45 * Math.max(0, 1 - age / .3)).toFixed(2)})">${ic(s.d > 0 ? 'up' : 'down')}${Math.abs(s.n) > 1 ? '<b>' + Math.abs(s.n) + '</b>' : ''}</span>` : '<span class="mv"></span>';
+    const mvHTML = act ? `<span class="mv ${s.d > 0 ? 'up' : 'dn'}" style="transform:scale(${(1 + .45 * Math.max(0, 1 - age / .3)).toFixed(2)})">${ic(s.d > 0 ? 'up' : 'down')}</span>` : '<span class="mv"></span>';
     if (r.q) { const p = c.qOut || r.q.part, t = c.qT[p - 1], t0 = r.order[0].qT[r.q.part - 1]; g = !isFinite(t) ? (c.qOut ? '—' : c.qPhase === 'garage' ? 'GARAGE' : c.qPhase === 'out' ? 'SORTIE' : c.qPhase === 'push' ? 'TOUR' : 'RETOUR') : c.qOut || i === 0 || !isFinite(t0) ? fmtLap(t) : fmtGap(t - t0); }
     else if (c.dnf) g = 'OUT';
     else if (c.pit) g = 'STAND';
@@ -5705,13 +5796,29 @@ function fieldHTML() {
   const r = Game.race;
   return `<table class="std" style="font-size:12.5px"><tr><th>P</th><th>Pilote</th><th>Pneus</th><th class="r">Âge</th><th class="r">Usure</th><th class="r">Arrêts</th><th>Utilisés</th></tr>${r.order.map((c, i) => `<tr class="${c.team === Game.team ? 'me' : ''}"><td>${i + 1}</td><td><span class="tbar" style="--c:${c.team.color}"></span> ${c.code}${c.pit ? ' <small style="color:var(--warn)">STAND</small>' : ''}${c.dnf ? ' <small>OUT</small>' : ''}</td><td>${tyreHTML(c.comp)}</td><td class="r">${c.age}</td><td class="r">${Math.round(c.wear)} %</td><td class="r">${c.stops}</td><td>${[...c.used].map(k => tyreHTML(k)).join('')}</td></tr>`).join('')}</table>`;
 }
-function qNext() { const r = Game.race; if (r && r.q && r.q.state === 'break') r.qualiNext(); }
+function qNext() { const r = Game.race; if (r && r.q && r.q.state === 'break') r.qualiNext(); qBreakPanel(); }
+// panneau au centre de l'écran entre deux parties des qualifications
+function qBreakPanel() {
+  const r = Game.race, on = !!(r && r.q && r.q.state === 'break' && Game.raf);
+  let p = $('#qbreak');
+  if (!on) { if (p) p.remove(); return; }
+  if (p && p._part === r.q.part) return;
+  if (!p) { p = document.createElement('div'); p.id = 'qbreak'; p.className = 'qbreak'; document.body.appendChild(p); }
+  p._part = r.q.part;
+  const out = r.cars.filter(c => c.qOut === r.q.part), mine = r.cars.filter(c => c.team === r.myTeam && (Game.role === 'manager' || c.isPlayer));
+  p.innerHTML = `<div class="kicker">Fin de la Q${r.q.part}</div>
+    <div class="qb-mine">${mine.map(c => `<span style="--c:${c.team.color}"><b>P${c.pos}</b> ${esc(c.drv.last)} · ${c.qOut ? 'éliminé' : 'qualifié pour la Q' + (r.q.part + 1)}</span>`).join('')}</div>
+    <div class="muted qb-out">Éliminés : ${out.map(c => esc(c.drv.last)).join(', ')}</div>
+    <button class="btn primary big" id="qb-go">${ic('ff')} Passer à la Q${r.q.part + 1}</button>`;
+  $('#qb-go', p).addEventListener('click', qNext);
+}
 function qLabel(r) { const q = r.q; return q.done ? 'Qualifications terminées' : q.state === 'break' ? `Fin de la Q${q.part}` : `Q${q.part} · ${q.t > 0 ? fmtClock(q.t) : 'drapeau à damier'}`; }
 function updateWallTop() {
   renderAsks();
   const r = Game.race, lead = r.order[0];
   $('#w-lap').textContent = r.q ? qLabel(r) : r.phase === 'formation' ? 'Tour de formation' : r.phase === 'grid' ? 'Grille de départ' : `Tour ${Math.min(r.laps, Math.max(1, lead.lapsDone + 1))}/${r.laps}`;
   const f = $('#w-flag');
+  qBreakPanel();
   { const b = $('#w-qnext'), on = !!(r.q && r.q.state === 'break'); if (b.hidden === on) b.hidden = !on; if (on) $('span', b).textContent = `Passer à la Q${r.q.part + 1}`; }
   if (r.q) { const chq = r.q.chq || r.q.state !== 'run'; f.innerHTML = chq ? ic('chq') + ' FIN DE Q' + r.q.part : 'VERT'; f.style.background = chq ? '#fff' : '#1a8d4a'; f.style.color = chq ? '#000' : '#fff'; }
   else if (r.flag) { f.innerHTML = ic('chq') + ' DRAPEAU À DAMIER'; f.style.background = '#fff'; f.style.color = '#000'; }
@@ -5757,13 +5864,14 @@ function buildCockpit() {
     </div>
     ${!quali && r.phase === 'formation' ? `<button class="btn small skipf" id="ck-skipf">${ic('ff')} Passer le tour de formation</button>` : ''}
     ${quali ? `<button class="btn primary big qgo" id="ck-go" hidden>${ic('garage')} SORTIR EN PISTE</button><button class="btn primary big qgo" id="ck-qnext" hidden>${ic('ff')} <span></span></button>` : ''}
-    <div class="touch"><div class="tbtn" data-t="l" aria-label="Gauche">${ic('left')}</div><div class="tbtn" data-t="r" aria-label="Droite">${ic('right')}</div><div class="tbtn" data-t="b" aria-label="Frein">FREIN</div><div class="tbtn" data-t="t" aria-label="Accélérateur">GAZ</div></div>`;
+    <div class="touch"><div class="ersfab"><button class="rbtn" id="ck-ersb2" aria-label="Mode ERS">${ic('bolt')}<span>NORMAL</span></button><button class="rbtn ovt" id="ck-ovt2" aria-label="Overtake" disabled>OVT</button></div><div class="tbtn" data-t="l" aria-label="Gauche">${ic('left')}</div><div class="tbtn" data-t="r" aria-label="Droite">${ic('right')}</div><div class="tbtn" data-t="b" aria-label="Frein">FREIN</div><div class="tbtn" data-t="t" aria-label="Accélérateur">GAZ</div></div>`;
   Radio.mount($('#ck-view')); Comm.mount($('#ck-view'));
   $('#ck-view').insertAdjacentHTML('beforeend', `<div class="lights" id="ck-lights" style="display:${quali ? 'none' : 'flex'}">${'<i></i>'.repeat(5)}</div><div class="bigmsg" id="ck-big"></div>`);
   $('#ck-view-btn').onclick = cycleView;
   Game._ersM = null;
   $('#ck-ersb').onclick = () => cycleERS();
   $('#ck-ovt').onclick = () => useOvertake();
+  $('#ck-ersb2').onclick = () => cycleERS(); $('#ck-ovt2').onclick = () => useOvertake();
   if ($('#ck-skipf')) $('#ck-skipf').onclick = () => { if (Game.race.phase === 'formation') Game.race.endFormation(); };
   $('#ck-menu').onclick = pauseMenu;
   $('#ck-auto').onclick = toggleAuto;
@@ -5793,7 +5901,7 @@ function wkWeatherLine() { const s = Game.wk.weather.segs[0]; return !s ? 'Cours
 function cycleERS() {
   const r = Game.race, me = r.cars.find(c => c.isPlayer); if (!me) return;
   const nx = { normal: 'boost', boost: 'harvest', harvest: 'normal', ovt: 'normal' }[me.ers];
-  r.setERS(me, nx); toast('ERS : ' + ERS[nx].n, 1100);
+  r.setERS(me, nx); me.ersHold = r.t + 1e6; toast('ERS : ' + ERS[nx].n, 1100);
 }
 function useOvertake() {
   const r = Game.race, me = r.cars.find(c => c.isPlayer); if (!me) return;
@@ -5819,7 +5927,7 @@ function updateCockpit() {
   renderTower($('#ck-tower'), false);
   $('#ck-lap').textContent = quali ? (r.q.state === 'break' ? 'PAUSE' : r.q.done ? 'FIN' : `Q${r.q.part} ${r.q.t > 0 ? fmtClock(r.q.t) : ''}`) : `${Math.min(r.laps, Math.max(1, me.lapsDone + 1))}/${r.laps}`;
   $('#ck-pos').textContent = quali ? (me.qOut ? 'Éliminé' : me.qPhase === 'garage' ? 'Garage' : me.qPhase === 'out' ? 'Sortie' : me.qPhase === 'in' ? 'Retour' : fmtLap(r.t - me.lapStart) + (me.invalid ? ' ×' : '')) : 'P' + me.pos;
-  if (quali) { const go = $('#ck-go'), can = me.qPhase === 'garage' && !me.qOut && r.q.state === 'run' && r.q.t > 0; if (go.hidden === can) go.hidden = !can; go.classList.toggle('pulse', can && me.qTold > 0); const nb = $('#ck-qnext'), br = r.q.state === 'break'; if (nb.hidden === br) nb.hidden = !br; if (br) $('span', nb).textContent = `Passer à la Q${r.q.part + 1}`; }
+  if (quali) { const go = $('#ck-go'), can = me.qPhase === 'garage' && !me.qOut && r.q.state === 'run' && r.q.t > 0; if (go.hidden === can) go.hidden = !can; go.classList.toggle('pulse', can && me.qTold > 0); qBreakPanel(); const nb = $('#ck-qnext'), br = r.q.state === 'break'; if (nb.hidden === br) nb.hidden = !br; if (br) $('span', nb).textContent = `Passer à la Q${r.q.part + 1}`; }
   $('#ck-last').textContent = fmtLap(me.lastLap); $('#ck-best').textContent = fmtLap(me.bestLap);
   const f = [1.04, 1.1, .96, 1.0];
   $('#ck-tyres').innerHTML = me.temps.map((t, q) => `<span><i style="--c:${tempCol(t)}"></i>${Math.round(100 - clamp(me.wear * f[q], 0, 100))}%</span>`).join('');
@@ -5833,7 +5941,8 @@ function updateCockpit() {
   const big = $('#ck-big');
   big.className = 'bigmsg' + (r.flag && me.fin ? ' chequer' : '');
   if ($('#ck-skipf') && r.phase !== 'formation') $('#ck-skipf').remove();
-  big.textContent = r.phase === 'formation' ? 'TOUR DE FORMATION' : quali ? (r.q.state === 'break' || r.q.done ? (me.qOut && me.qOut < r.q.part ? '' : `P${me.pos}`) : '') : r.phase === 'race' && r.t < 1.5 ? 'GO !' : me.fin ? 'P' + me.pos : '';
+  big.classList.toggle('small', r.phase === 'formation');
+  big.textContent = r.phase === 'formation' ? (me.formDone ? 'EN PLACE — ATTENDS LES AUTRES' : me.formRem != null && me.formRem < 120 && me.formRem > -20 ? `TON EMPLACEMENT : ${Math.max(0, Math.round(me.formRem))} m` : 'TOUR DE FORMATION') : quali ? (r.q.state === 'break' || r.q.done ? (me.qOut && me.qOut < r.q.part ? '' : `P${me.pos}`) : '') : r.phase === 'race' && r.t < 1.5 ? 'GO !' : me.fin ? 'P' + me.pos : '';
   drawMiniMap();
 }
 function updateDash() {
@@ -5845,8 +5954,8 @@ function updateDash() {
   $('#ck-ers').style.width = me.bat + '%';
   $('#ck-batp').textContent = Math.round(me.bat) + '%';
   const em = me.bat <= .5 ? 'VIDE' : ERS[me.ers].n;
-  if (Game._ersM !== em) { Game._ersM = em; $('#ck-ersb span').textContent = me.ers === 'ovt' ? 'OVERTAKE' : ERS[me.ers].n; $('#ck-ersk').textContent = em; $('#ck-ersk').className = 'ersk ' + (me.bat <= .5 ? 'empty' : me.ers); }
-  const ob = $('#ck-ovt'); if (ob.disabled === me.ovtAvail) ob.disabled = !me.ovtAvail; ob.classList.toggle('on', me.ers === 'ovt');
+  if (Game._ersM !== em) { Game._ersM = em; $('#ck-ersb span').textContent = me.ers === 'ovt' ? 'OVERTAKE' : ERS[me.ers].n; $('#ck-ersb2 span').textContent = me.ers === 'ovt' ? 'OVT' : { harvest: 'RECH.', normal: 'NORMAL', boost: 'BOOST' }[me.ers]; $('#ck-ersb2').className = 'rbtn ' + me.ers; $('#ck-ersk').textContent = em; $('#ck-ersk').className = 'ersk ' + (me.bat <= .5 ? 'empty' : me.ers); }
+  const ob = $('#ck-ovt'); if (ob.disabled === me.ovtAvail) ob.disabled = !me.ovtAvail; ob.classList.toggle('on', me.ers === 'ovt'); const o2 = $('#ck-ovt2'); if (o2.disabled === me.ovtAvail) o2.disabled = !me.ovtAvail; o2.classList.toggle('on', me.ers === 'ovt');
 }
 function drawMiniMap() { const cv = $('#ck-map'); if (cv && cv.offsetParent) drawMap(cv, [Game.drv.code]); }
 function endQuali() {
@@ -5897,7 +6006,7 @@ function settingsModal(onClose) {
         <div class="opt"><label>Incidents aléatoires</label><div class="seg" id="st-inc"><button data-v="1" class="${p.incidents !== false ? 'on' : ''}">Oui</button><button data-v="0" class="${p.incidents === false ? 'on' : ''}">Non</button></div></div>
         <p class="muted" style="font-size:13px;margin:0">Accidents, casses, crevaisons de temps en temps, avec safety car, VSC ou drapeau rouge décidés par la direction de course.</p>
         <div class="opt"><label>Radio des autres écuries</label><div class="seg" id="st-o"><button data-v="1" class="${p.others ? 'on' : ''}">Oui</button><button data-v="0" class="${!p.others ? 'on' : ''}">Non</button></div></div>
-        <p class="muted" style="font-size:12px;margin:0">Voitures détaillées : ${CarGLB.st === 'ready' ? 'chargées' : CarGLB.st === 'loading' ? 'chargement…' : CarGLB.st === 'na' ? 'disponibles dans l\'appli installée (site)' : CarGLB.st === 'off' ? 'qualité Moyenne ou plus' : 'échec du chargement' + (CarGLB.err ? ' (' + esc(String(CarGLB.err)) + ')' : '')}. Modèle 3D « 2026 Redbull RB22 » par Dave Love (Sketchfab), licence CC BY 4.0, allégé et recoloré pour chaque écurie. Safety Car « 2019 Mercedes-Benz AMG GTR Safety Car » par OUTPISTON (Sketchfab), licence CC BY-NC-SA 4.0.</p>
+        <p class="muted" style="font-size:12px;margin:0">Voitures détaillées : ${CarGLB.st === 'ready' ? 'chargées' : CarGLB.st === 'loading' ? 'chargement…' : CarGLB.st === 'na' ? 'disponibles dans l\'appli installée (site)' : CarGLB.st === 'off' ? 'qualité Moyenne ou plus' : 'échec du chargement' + (CarGLB.err ? ' (' + esc(String(CarGLB.err)) + ')' : '')}. Modèle 3D « 2026 Redbull RB22 » par Dave Love (Sketchfab), licence CC BY 4.0, allégé et recoloré pour chaque écurie. Roues « Formula 1 2012 Wheel » par Maxence Leret d'Aubigny (Sketchfab), licence CC BY 4.0. Safety Car « 2019 Mercedes-Benz AMG GTR Safety Car » par OUTPISTON (Sketchfab), licence CC BY-NC-SA 4.0.</p>
         <button class="btn primary" id="st-ok">Fermer</button>
       </div>`;
     if ($('#st-nd')) $('#st-nd').onclick = () => { Neural.download(() => { const el = $('#st-np'); if (el) el.textContent = 'Téléchargement… ' + Math.round(Neural.prog * 100) + ' %'; }).then(ok => { if (ok) { p.neural = true; Store.savePrefs(p); toast('Voix fluide installée.'); } if ($('#modal').classList.contains('on') && $('#st-ve')) draw(); }); draw(); };
@@ -5906,7 +6015,7 @@ function settingsModal(onClose) {
     $('#st-vd').onchange = e => { p.voiceDrv = e.target.value; Store.savePrefs(p); };
     $('#st-vet').onclick = () => Speech.test('eng'); $('#st-vdt').onclick = () => Speech.test('drv');
     const seg = (id, fn) => $$('#' + id + ' button').forEach(b => b.onclick = () => { fn(b.dataset.v); Store.savePrefs(p); draw(); });
-    seg('st-v', v => p.voice = v === '1'); seg('st-q', v => { p.quality = +v; if (p.quality >= 1) { CarGLB.init(); Kit.init(); SafetyGLB.init(); } });
+    seg('st-v', v => p.voice = v === '1'); seg('st-q', v => { p.quality = +v; if (p.quality >= 1) { CarGLB.init(); Kit.init(); SafetyGLB.init(); WheelGLB.init(); } });
     seg('st-s', v => { p.sound = v === '1'; if (Game.raf) { Sfx.init(); p.sound ? Sfx.engineOn() : Sfx.engineOff(); } });
     seg('st-o', v => p.others = v === '1');
     seg('st-inc', v => p.incidents = v === '1');
@@ -6078,11 +6187,21 @@ function engineAudio(r, w, dt) {
 /* ---------------- INIT ---------------- */
 (function init() {
   if (matchMedia('(pointer: coarse)').matches) document.body.classList.add('has-touch');
+  // iPad : quand un doigt reste sur GAZ ou FREIN, iOS n'envoie plus de « clic » pour un deuxième doigt.
+  // On déclenche donc les boutons dès que le doigt les touche.
+  document.addEventListener('touchstart', e => {
+    if (!Game.raf) return;
+    for (const t of e.changedTouches) {
+      const el = t.target && t.target.closest ? t.target.closest('button, .ersfab button') : null;
+      if (!el || el.disabled || el.classList.contains('ptt') || el.closest('.touch .tbtn') || el.closest('#modal')) continue;
+      e.preventDefault(); el.click();
+    }
+  }, { passive: false });
   if (!window.THREE) { document.body.innerHTML = '<div style="padding:30px;font:16px system-ui;color:#fff">Impossible de charger le moteur 3D (Three.js). Vérifie ta connexion Internet puis recharge la page.</div>'; return; }
   if (Speech.ok) speechSynthesis.onvoiceschanged = () => { };
   AI.init();
   if (Game.prefs.neural) Neural.init();
-  if (Game.prefs.quality >= 1) { CarGLB.init(); Kit.init(); SafetyGLB.init(); }
+  if (Game.prefs.quality >= 1) { CarGLB.init(); Kit.init(); SafetyGLB.init(); WheelGLB.init(); }
   document.addEventListener('pointerdown', () => Sfx.init(), { passive: true });
   renderHome();
 })();
