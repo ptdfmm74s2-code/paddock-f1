@@ -2869,7 +2869,7 @@ const WheelGLB = {
     if (this.st !== 'off') return this.p;
     if (!CarGLB.avail()) { this.st = 'na'; return this.p = Promise.resolve(); }
     this.st = 'loading';
-    this.p = Kit.loader().then(() => new Promise(res => new THREE.GLTFLoader().load('wheel.glb', g => {
+    this.p = Kit.loader().then(() => new Promise(res => new THREE.GLTFLoader().load('wheel.glb?v=2', g => {
       try {
         g.scene.updateMatrixWorld(true);
         const parts = []; const bb = new THREE.Box3();
