@@ -603,6 +603,7 @@ class Race {
     this.twoComp = this.session === 'race' && this.laps >= 8;
     this.t = 0; this.phase = this.session === 'quali' ? 'race' : 'grid'; this.lights = 0; this.lightT = 0; this.goAt = 5 + rand(.3, 2.2);
     this.NCP = 40; this.cpLead = []; this.ev = []; this.flag = false; this.finCount = 0; this.fastest = { t: Infinity, c: null };
+    this.incidents = o.incidents !== false;
     this.pitUpg = o.pitUpg || 0; this.relUpg = o.relUpg || 0;
     this.fuelLap = 70 / this.realLaps;
     this.cars = o.grid.map((d, gp) => this.makeCar(d, gp, (o.startComp || {})[d.code]));
@@ -653,6 +654,40 @@ class Race {
     this.ev.push({ k: 'pitin', c });
   }
   /* ---------- DIRECTION DE COURSE : drapeaux, safety car, VSC, voiture médicale ---------- */
+  /* ---------- INCIDENTS ALÉATOIRES ET DIRECTION DE COURSE AUTOMATIQUE ---------- */
+  incidentsStep(dt) {
+    const rc = this.rc, T = this.T, lead = this.order[0];
+    if (this.session !== 'race' || this.phase !== 'race' || this.flag || !this.incidents) return;
+    // fin automatique des neutralisations décidées par la direction de course
+    if (rc.auto && this.t > rc.auto.until) {
+      const k = rc.auto.k; rc.auto = null;
+      if (k === 'sc' && rc.sc) this.setFlag('scin'); else if (k === 'vsc' && rc.vsc) this.setFlag('vscend'); else if (k === 'red' && rc.red) this.setFlag('green'); else if ((k === 'yellow' || k === 'dyellow') && (rc.flag === 'yellow' || rc.flag === 'dyellow')) this.setFlag('green');
+    }
+    if (rc.pending && this.t > rc.pending.at) { const p = rc.pending; rc.pending = null; this.setFlag(p.k, p.o || {}); rc.auto = { k: p.k, until: this.t + p.dur }; }
+    if (!this.nextInc) this.nextInc = T.T0 * rand(1.5, 4);
+    if (this.t < this.nextInc || rc.flag !== 'green' || rc.auto || rc.pending || lead.lapsDone < 1 || this.laps - lead.lapsDone < 2) return;
+    this.nextInc = this.t + T.T0 * rand(2.5, 6);
+    // environ 1 à 2 incidents par course en moyenne, plus rares sur les courses très courtes
+    if (Math.random() > clamp(.32 * this.realLaps / Math.max(this.laps, 1) * .2 + .15, .15, .42)) return;
+    const pool = this.cars.filter(c => !c.dnf && !c.fin && !c.pit && !c.isPlayer && c.v > 30);
+    if (!pool.length) return;
+    const c = pick(pool), roll = Math.random(), sec = this.sectorOf(c.ti || 0), turn = 1 + Math.floor(Math.random() * 16);
+    if (roll < .45) { // accident
+      c.dnf = true; c.crashed = true; c.v *= .3; c.d = Math.sign(c.d || 1) * (T.hw + 2);
+      this.ev.push({ k: 'incident', type: 'crash', c, turn });
+      this.setFlag('dyellow', { sector: sec });
+      const r2 = Math.random(), dur = T.T0 * rand(1.4, 2.6);
+      rc.pending = r2 < .55 ? { k: 'sc', at: this.t + 5, dur } : r2 < .85 ? { k: 'vsc', at: this.t + 4, dur: T.T0 * rand(.8, 1.4) } : { k: 'red', at: this.t + 5, dur: 40 };
+    } else if (roll < .75) { // casse mécanique
+      c.dnf = true; c.v *= .6;
+      this.ev.push({ k: 'incident', type: 'failure', c, turn });
+      if (Math.random() < .45) rc.pending = { k: 'vsc', at: this.t + 3, dur: T.T0 * rand(.6, 1.1) };
+      else { this.setFlag('yellow', { sector: sec }); rc.auto = { k: 'yellow', until: this.t + T.T0 * .6 }; }
+    } else { // crevaison
+      c.punct = true; c.wear = Math.max(c.wear, 80); c.pitReq = true; c.pitComp = this.autoComp(c);
+      this.ev.push({ k: 'incident', type: 'puncture', c, turn });
+    }
+  }
   sectorOf(i) { return 1 + Math.min(2, Math.floor(i / (this.T.N / 3))); }
   flagLimit(c, idx) {
     const rc = this.rc; if (!rc || c.fin) return null;
@@ -755,6 +790,7 @@ class Race {
     this.w = clamp(this.w + (r - this.w) * (r > this.w ? 1.4 : 0.45) * dt / T.T0, 0, 1);
 
     // ordre sur la piste pour les interactions
+    this.incidentsStep(dt);
     const rcs = this.rc;
     if (rcs.sc) { this.stepSafety(rcs.sc, dt, false); if (rcs.sc.gone) { rcs.sc = null; rcs.flag = 'green'; this.ev.push({ k: 'restart' }); } }
     if (rcs.med) { this.stepSafety(rcs.med, dt, true); if (rcs.med.gone) rcs.med = null; }
@@ -805,6 +841,7 @@ class Race {
     if (c.fin) vt *= .72;
     if (this.t < c.react) vt = 0;
     const FL = this.flagLimit(c, idx); if (FL) vt = Math.min(vt, FL.v);
+    if (c.punct && !c.pit) vt *= .55;
     const u = mod(s - (L - T.pitIn), L);
     // entrée des stands
     if (!c.pit && c.pitReq && c.pu > L - 120 && u < 120 && c.dist > 0 && !c.fin) this.enterPit(c);
@@ -822,7 +859,7 @@ class Race {
             vt = 0; c.v = 0; P.t += dt;
             c.dist += (P.box - u); // reste sur l'emplacement
             if (P.t >= P.dur) {
-              c.comp = c.pitComp || this.autoComp(c); c.used.add(c.comp); c.wear = 0; c.age = 0; c.stops++;
+              c.comp = c.pitComp || this.autoComp(c); c.used.add(c.comp); c.wear = 0; c.age = 0; c.stops++; c.punct = false;
               c.pitReq = false; c.pitComp = null; P.done = true; c.temps = [70, 70, 70, 70]; c.paceT = 0;
               this.ev.push({ k: 'pitstop', c, dur: P.dur, slow: P.slow });
             }
@@ -890,12 +927,13 @@ class Race {
     c.dist += diff; c.dist = Math.round((c.dist - s) / L) * L + s; c.ps = s; c.d = lat; // distance toujours alignée sur la position réelle
     const u = mod(s - (L - T.pitIn), L);
     // entrée des stands : box demandé, ou le pilote engage lui-même la voiture dans la voie des stands
-    const nearEntry = u < 130 || u > L - 50;
-    const drivesIn = lat * T.pitSide > T.hw + 1 && (u < 110 || u > L - 30);
-    if ((c.pitReq || drivesIn) && nearEntry && c.dist > 0 && !c.fin && this.session === 'race' && c.lastPitLap !== c.lapsDone && !c.pit) {
+    const nearEntry = u < 150 || u > L - 60;
+    const latV = (lat - (c.prevLat ?? lat)) / Math.max(dt, 1e-3); c.prevLat = lat;
+    const drivesIn = (u < 140 || u > L - 60) && ((lat * T.pitSide > T.hw + .6) || (lat * T.pitSide > T.hw - 1.2 && latV * T.pitSide > 1.2));
+    if ((c.pitReq || drivesIn) && nearEntry && c.dist > 0 && !c.fin && c.lastPitLap !== c.lapsDone && !c.pit && !(this.session === 'quali' && !drivesIn)) {
       if (!c.pitReq) { c.pitReq = true; c.pitComp = c.pitComp || this.autoComp(c); }
       c.manual = false; c.autoPit = true; c.dVel = 0; c.pu = u;
-      if (u > L - 50) { c.dist += (L - u) + 1; } // on se cale sur l'entrée
+      if (u > L - 60) { c.dist += (L - u) + 1; } // on se cale sur l'entrée
       this.enterPit(c);
       this.ev.push({ k: 'autopit', c }); return;
     }
@@ -930,7 +968,8 @@ class Race {
     c.h = wrapA(c.h - r * dt);
     c.x += Math.sin(c.h) * c.v * dt; c.z += Math.cos(c.h) * c.v * dt;
     // murs / barrières
-    const wall = lat >= 0 ? T.wallP[i] : T.wallN[i];
+    const uW = mod(i * T.ds - (L - T.pitIn), L), pitZone = uW < T.pitLen && Math.sign(lat) === T.pitSide;
+    const wall = pitZone ? Math.max(lat >= 0 ? T.wallP[i] : T.wallN[i], T.pitOff + 5) : (lat >= 0 ? T.wallP[i] : T.wallN[i]);
     if (Math.abs(lat) > wall - 1) {
       const sg = Math.sign(lat), pen = Math.abs(lat) - (wall - 1);
       c.x -= T.nx[i] * sg * pen; c.z -= T.nz[i] * sg * pen;
@@ -1343,6 +1382,18 @@ function skyMaterial() {
   });
 }
 
+// Maillage de piste affiné (courbes lissées) pour l'affichage
+function refineTrack(T, k) {
+  const N = T.N * k, F = Object.assign({}, T, { N, ds: T.ds / k });
+  for (const key of ['px', 'pz', 'py', 'k', 'k40', 'vp', 'line', 'wallP', 'wallN', 'tx', 'tz', 'nx', 'nz']) F[key] = new Float32Array(N);
+  for (let i = 0; i < T.N; i++) for (let s = 0; s < k; s++) {
+    const t = s / k, a = mod(i - 1, T.N), b = i, c = (i + 1) % T.N, d = (i + 2) % T.N, o = i * k + s;
+    F.px[o] = crI(T.px[a], T.px[b], T.px[c], T.px[d], t); F.pz[o] = crI(T.pz[a], T.pz[b], T.pz[c], T.pz[d], t);
+    for (const key of ['py', 'k', 'k40', 'vp', 'line', 'wallP', 'wallN']) F[key][o] = T[key][b] + (T[key][c] - T[key][b]) * t;
+  }
+  for (let i = 0; i < N; i++) { const a = mod(i - 1, N), b = (i + 1) % N; let dx = F.px[b] - F.px[a], dz = F.pz[b] - F.pz[a]; const l = Math.hypot(dx, dz) || 1; dx /= l; dz /= l; F.tx[i] = dx; F.tz[i] = dz; F.nx[i] = -dz; F.nz[i] = dx; }
+  return F;
+}
 class World {
   constructor(race, Q = 2) {
     this.race = race; this.Q = Q; const T = this.T = race.T;
@@ -1406,7 +1457,7 @@ class World {
     }
   }
   buildTrack() {
-    const T = this.T, s = this.scene, hw = T.hw, info = T.info, Q = this.Q, L = T.L;
+    const T = this.Tf || (this.Tf = refineTrack(this.T, 2)), s = this.scene, hw = T.hw, info = T.info, Q = this.Q, L = T.L;
     const recv = m => { m.receiveShadow = Q >= 2; return m; };
     const asph = TEX.asphalt.clone(); asph.needsUpdate = true; asph.repeat.set(T.w / 8, 1);
     const asN = TEX.asphaltN.clone(); asN.needsUpdate = true; asN.repeat.set(T.w / 4, 2);
@@ -1449,7 +1500,7 @@ class World {
     }
     // vibreurs en relief + bande verte peinte
     const kerbMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .55, side: THREE.DoubleSide });
-    const isK = i => Math.abs(T.k40[i]) > 1 / 170;
+    const isK = i => Math.abs(T.k40[i]) > 1 / 230;
     const kc = (i, alt) => (Math.floor(i * T.ds / 3) % 2) ? '#d61f1f' : alt;
     for (const sd of [1, -1]) {
       s.add(recv(new THREE.Mesh(strips(T, i => isK(i) ? { a: sd * (hw - .05), b: sd * (hw + .7), y0: .07, y1: .14, color: kc(i, '#f2f2f2') } : null), kerbMat)));
@@ -1830,7 +1881,8 @@ class World {
     const local = (x, y, z, out) => out.set(x, y, z).applyMatrix4(g.matrixWorld);
     let fov = 60; cam.near = .1;
     switch (spec.type) {
-      case 'onboard': local(0, 1.2, -.3, v); local(0, .92, 16, lk); cam.position.copy(v); cam.lookAt(lk); fov = 74; cam.near = .03; break;
+      case 'onboard': local(0, 1.3, -.52, v); local(0, .66, 3.4, lk); cam.position.copy(v); cam.lookAt(lk); fov = 66; cam.near = .03; break;
+      case 'eyes': local(0, .98, .08, v); local(0, .8, 16, lk); cam.position.copy(v); cam.lookAt(lk); fov = 72; cam.near = .03; break;
       case 'tcam': local(0, 1.34, -.66, v); local(0, .9, 16, lk); cam.position.copy(v); cam.lookAt(lk); fov = 64; cam.near = .05; break;
       case 'rear': local(0, 1.42, -.15, v); local(0, 1.0, -16, lk); cam.position.copy(v); cam.lookAt(lk); fov = 46; break;
       case 'chase': {
@@ -1861,7 +1913,7 @@ class World {
         fov = clamp(2 * Math.atan(11 / D) * 180 / Math.PI, 4, 55);
       }
     }
-    if ((spec.type === 'onboard' || spec.type === 'tcam') && c.v > 5) {
+    if ((spec.type === 'onboard' || spec.type === 'tcam' || spec.type === 'eyes') && c.v > 5) {
       const k = Math.min(1, c.v / 90) * .0012 + (Math.abs(c.d) > this.T.hw - .2 ? .003 : 0), tt = this.time;
       cam.rotateX(Math.sin(tt * 41) * k + Math.sin(tt * 67) * k * .6); cam.rotateZ(Math.sin(tt * 29) * k * .7);
     }
@@ -2008,6 +2060,7 @@ function carGeoHQ() {
   const halo = new THREE.TubeGeometry(new THREE.CatmullRomCurve3([[-.36, .78, -.28], [-.42, .88, .02], [-.34, .935, .36], [-.14, .95, .54], [0, .955, .58], [.14, .95, .54], [.34, .935, .36], [.42, .88, .02], [.36, .78, -.28]].map(p => new THREE.Vector3(...p))), 48, .034, 12, false);
   const pillar = new THREE.TubeGeometry(new THREE.CatmullRomCurve3([[0, .63, .98], [0, .77, .84], [0, .92, .64], [0, .955, .58]].map(p => new THREE.Vector3(...p))), 14, .03, 8, false);
   const haloG = mergeUV([[halo], [pillar]]);
+  const haloStrip = mergeUV([[new THREE.TubeGeometry(new THREE.CatmullRomCurve3([[-.2, .948, .5], [-.1, .953, .56], [0, .957, .58], [.1, .953, .56], [.2, .948, .5]].map(p => new THREE.Vector3(...p))), 16, .036, 8, false)], [new THREE.TubeGeometry(new THREE.CatmullRomCurve3([[0, .78, .84], [0, .92, .64], [0, .957, .58]].map(p => new THREE.Vector3(...p))), 8, .033, 8, false)]]);
   const arm = (x0, y0, z0, x1, y1, z1, r = .016) => { const a = new THREE.Vector3(x0, y0, z0), b = new THREE.Vector3(x1, y1, z1); const L = a.distanceTo(b), g = Cy(r, r, L, 6); const mid = a.clone().add(b).multiplyScalar(.5); const dir = b.clone().sub(a).normalize(); const qq = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir); const e2 = new THREE.Euler().setFromQuaternion(qq); return [g, mid.x, mid.y, mid.z, e2.x, e2.y, e2.z]; };
   const vane = shape2D([[0, 0], [.32, 0], [.28, .2], [.04, .24]], .012); vane.rotateY(Math.PI / 2 - .12);
   const edge = shape2D([[0, 0], [1.6, 0], [1.6, .05], [0, .09]], .015); edge.rotateY(Math.PI / 2);
@@ -2049,7 +2102,7 @@ function carGeoHQ() {
   const tyre = (r, wdt) => { const p = [[r * .64, -wdt / 2], [r * .9, -wdt / 2], [r * .975, -wdt * .45], [r, -wdt * .32], [r, wdt * .32], [r * .975, wdt * .45], [r * .9, wdt / 2], [r * .64, wdt / 2]].map(([a, b]) => new THREE.Vector2(a, b)); const g = new THREE.LatheGeometry(p, 64); g.rotateZ(Math.PI / 2); return g; };
   const wheel = (r, wdt) => mergeParts([[tyre(r, wdt), 0, 0, 0, '#121214'], [Cy(r * .64, r * .64, wdt * .82, 28), 0, 0, 0, 0, 0, Math.PI / 2, '#2b2d33']]);
   HQ = {
-    body, wings, plates, fplates, flap, haloG, carbon, mirrors, intake, wheelC, fwDet, rwDet,
+    body, wings, plates, fplates, flap, haloG, haloStrip, carbon, mirrors, intake, wheelC, fwDet, rwDet,
     wheelF: wheel(.36, .36), wheelR: wheel(.39, .46),
     cover: new THREE.CircleGeometry(1, 48), side: new THREE.RingGeometry(.64, .985, 64, 1),
     helmet: new THREE.SphereGeometry(.15, 32, 24), visor: new THREE.SphereGeometry(.153, 28, 10, -1.1, 2.2, 1.25, .42), tcam: B(.2, .08, .14), rain: B(.12, .05, .04), shadow: new THREE.PlaneGeometry(2.3, 5.9),
@@ -2178,7 +2231,7 @@ function makeCarHQ(c, Q) {
   const bodyKey = 'bd' + t.id, bodyM = PHYS[bodyKey] || (PHYS[bodyKey] = new THREE.MeshPhysicalMaterial({ color: t.body, roughness: .4, metalness: .05, clearcoat: .6, clearcoatRoughness: .1, envMapIntensity: .6, side: THREE.DoubleSide }));
   const plKey = 'pl' + t.id, plM = PHYS[plKey] || (PHYS[plKey] = new THREE.MeshPhysicalMaterial({ map: plateTex(t), roughness: .4, metalness: .05, clearcoat: .6, clearcoatRoughness: .1, envMapIntensity: .6, side: THREE.DoubleSide }));
   const flKey = 'fl' + t.id, flM = PHYS[flKey] || (PHYS[flKey] = new THREE.MeshPhysicalMaterial({ color: t.acc2 === '#FFFFFF' ? t.color : t.acc2, roughness: .35, metalness: .1, clearcoat: .8, clearcoatRoughness: .1, side: THREE.DoubleSide }));
-  add(G.plates, plM); add(G.fplates, plM); add(G.flap, flM); add(G.haloG, bodyM);
+  add(G.plates, plM); add(G.fplates, plM); add(G.flap, flM); add(G.haloG, carbM); add(G.haloStrip, bodyM);
   add(G.carbon, carbM);
   add(G.mirrors, accM);
   add(G.wheelC, mat('#ffffff', 'std', { vertexColors: true, roughness: .5 }));
@@ -2898,6 +2951,14 @@ const Brain = {
     const r = this.race, c = ev.c, pilot = this.role === 'pilot';
     const me = pilot ? r.cars.find(x => x.isPlayer) : null, P = x => pilot && x && x.isPlayer;
     switch (ev.k) {
+      case 'incident': {
+        const v = ev.c, nm = v.drv.name, T2 = { crash: `Accident au virage ${ev.turn} : ${nm} est dans le mur !`, failure: `${nm} est arrêté au bord de la piste, casse mécanique.`, puncture: `Crevaison pour ${nm}, il rentre aux stands au ralenti.` }[ev.type];
+        if (typeof rcBanner === 'function') rcBanner(T2.replace(' !', ''));
+        if (this.mine(v)) { this.drv(v, { crash: 'Non, non, non ! J\'ai perdu l\'arrière… je suis dans le mur. Je vais bien.', failure: 'Je perds de la puissance… le moteur est cassé, je m\'arrête.', puncture: 'Crevaison ! Crevaison à l\'arrière gauche, je rentre !' }[ev.type]); break; }
+        const mc = r.cars.find(x => this.mine(x) && !x.dnf);
+        if (mc) (pilot && mc.isPlayer) ? this.eng(mc, T2 + (ev.type === 'crash' ? ' Attention, débris en piste.' : ''), { sys: true }) : this.drv(mc, ev.type === 'crash' ? `Gros accident pour ${v.drv.last}, il y a des débris !` : ev.type === 'failure' ? `${v.drv.last} est arrêté sur le bord.` : `${v.drv.last} a crevé.`);
+        break;
+      }
       case 'rcflag': {
         if (typeof rcBanner === 'function') rcBanner(rcText(ev.f, ev.o));
         const mc = r.cars.filter(c => this.mine(c) && !c.dnf);
@@ -3701,7 +3762,7 @@ const Game = {
   save: null, setup: null, wk: null, race: null, world: null, role: 'manager', team: null, drv: null,
   speed: 1, paused: false, raf: 0, last: 0, uiT: 0, secAcc: 0, views: [], mons: [], trackCache: {}, ending: false, pilotView: 0,
   multi: false, remote: false, host: false, mp: null, boxComp: null,
-  prefs: Object.assign({ micKeep: true, voice: true, others: true, readMine: false, sound: true, ai: true, quality: matchMedia('(pointer: coarse)').matches ? 1 : 2 }, Store.prefs()),
+  prefs: Object.assign({ incidents: true, micKeep: true, voice: true, others: true, readMine: false, sound: true, ai: true, quality: matchMedia('(pointer: coarse)').matches ? 1 : 2 }, Store.prefs()),
 };
 function setTeamVars(t) { document.documentElement.style.setProperty('--team', t.color); document.documentElement.style.setProperty('--team-ink', t.ink); }
 function show(id) { $$('.screen').forEach(s => s.classList.toggle('on', s.id === id)); window.scrollTo(0, 0); }
@@ -3918,6 +3979,7 @@ function startSession(session) {
     T, laps: session === 'quali' ? 999 : wk.laps, realLaps: def.laps, role: wk.role, team, drv: Game.drv, session,
     aiOff: wk.role === 'pilot' ? AI_LV[wk.ai].off : 0, assist: wk.assist, grid, startComp: wk.comp,
     wearScale: clamp(def.laps / wk.laps * .85, 1, 8), weather: session === 'quali' ? { segs: wk.weather.segs.filter(x => x.from < 0).map(x => ({ ...x, to: 999 })) } : wk.weather,
+    incidents: Game.prefs.incidents !== false,
     pitUpg: !wk.quick && s ? s.upg.pit : 0, relUpg: !wk.quick && s ? s.upg.rel : 0,
   });
   if (Game.world) Game.world.dispose();
@@ -4051,11 +4113,11 @@ function rebuildViews() {
     $$('#mons .mon').forEach(m => { const k = m.dataset.kind; if (/^(tv|heli|onboard|tcam|chase|rear)/.test(k)) Game.views.push({ el: $('.mon-body', m), key: 'm' + m.dataset.i + k, spec: camSpec(k), mon: m }); });
   } else {
     const me = Game.race.cars.find(c => c.isPlayer);
-    const PV = ['onboard', 'tcam', 'chase', 'tv', 'heli'];
+    const PV = ['onboard', 'eyes', 'tcam', 'chase', 'tv', 'heli'];
     const t = PV[Game.pilotView % PV.length];
     Game.views.push({ el: $('#ck-view'), key: 'pv' + t, spec: { type: t, car: me } });
     const mir = $('#ck-mirror');
-    if (mir) { mir.style.display = (t === 'onboard' || t === 'tcam') ? 'block' : 'none'; if (t === 'onboard' || t === 'tcam') Game.views.push({ el: mir, key: 'mirror', spec: { type: 'rear', car: me } }); }
+    if (mir) mir.style.display = 'none';
   }
 }
 
@@ -4282,7 +4344,7 @@ function buildCockpit() {
   else Brain.eng(me, `Bienvenue au ${gpName(def)}. ${wkWeatherLine()} Concentre-toi sur les feux.`);
 }
 function wkWeatherLine() { const s = Game.wk.weather.segs[0]; return !s ? 'Course au sec prévue.' : s.from < 0 ? 'La piste est mouillée.' : `Pluie possible vers le tour ${Math.max(1, Math.round(s.from))}.`; }
-function cycleView() { Game.pilotView = (Game.pilotView + 1) % 5; rebuildViews(); toast('Vue : ' + ['Cockpit', 'T-cam', 'Poursuite', 'TV', 'Hélicoptère'][Game.pilotView], 1200); }
+function cycleView() { Game.pilotView = (Game.pilotView + 1) % 6; rebuildViews(); toast('Vue : ' + ['Caméra embarquée', 'Vue casque', 'T-cam', 'Poursuite', 'TV', 'Hélicoptère'][Game.pilotView], 1200); }
 function requestBox(k) {
   const r = Game.race, me = r.cars.find(c => c.isPlayer); if (!me || r.session !== 'race') return;
   if (me.pitReq && !k) { me.pitReq = false; me.pitComp = null; Game.multi ? Radio.push({ who: 'me', car: me, text: 'J\'annule le box, je reste dehors.', speak: false }) : Brain.eng(me, 'Box annulé, on reste dehors.'); }
@@ -4351,6 +4413,8 @@ function settingsModal(onClose) {
         <div class="opt"><label>Qualité graphique</label><div class="seg" id="st-q">${['Basse', 'Moyenne', 'Haute', 'Ultra'].map((x, i) => `<button data-v="${i}" class="${p.quality === i ? 'on' : ''}">${x}</button>`).join('')}</div></div>
         <p class="muted" style="font-size:13px;margin:0">Haute : ombres, herbe, public animé. Ultra : ombres et image plus fines, plus de décor (iPad récent ou ordinateur). Appliqué à la prochaine course.</p>
         <div class="opt"><label>Son des moteurs</label><div class="seg" id="st-s"><button data-v="1" class="${p.sound ? 'on' : ''}">Oui</button><button data-v="0" class="${!p.sound ? 'on' : ''}">Non</button></div></div>
+        <div class="opt"><label>Incidents aléatoires</label><div class="seg" id="st-inc"><button data-v="1" class="${p.incidents !== false ? 'on' : ''}">Oui</button><button data-v="0" class="${p.incidents === false ? 'on' : ''}">Non</button></div></div>
+        <p class="muted" style="font-size:13px;margin:0">Accidents, casses, crevaisons de temps en temps, avec safety car, VSC ou drapeau rouge décidés par la direction de course.</p>
         <div class="opt"><label>Radio des autres écuries</label><div class="seg" id="st-o"><button data-v="1" class="${p.others ? 'on' : ''}">Oui</button><button data-v="0" class="${!p.others ? 'on' : ''}">Non</button></div></div>
         <button class="btn primary" id="st-ok">Fermer</button>
       </div>`;
@@ -4363,6 +4427,7 @@ function settingsModal(onClose) {
     seg('st-v', v => p.voice = v === '1'); seg('st-q', v => p.quality = +v);
     seg('st-s', v => { p.sound = v === '1'; if (Game.raf) { Sfx.init(); p.sound ? Sfx.engineOn() : Sfx.engineOff(); } });
     seg('st-o', v => p.others = v === '1');
+    seg('st-inc', v => p.incidents = v === '1');
     seg('st-nn', v => p.neural = v === '1');
     seg('st-mk', v => { p.micKeep = v === '1'; if (!p.micKeep && !Mic.gate) Mic.shutdown(); });
     $('#st-ok').onclick = () => { $('#modal').classList.remove('on'); onClose && onClose(); };
