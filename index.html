@@ -441,6 +441,11 @@ table.std td.r, table.std th.r { text-align: right; }
 .hud-tower .tban { padding: 3px 5px; } .hud-tower .tban b { font-size: 12.5px; } .hud-tower .tban span { font-size: 9.5px; }
 .hud-tower .tcard { padding: 4px 6px 5px; gap: 1px; } .hud-tower .tcard .tc-big .num { font-size: 26px !important; } .hud-tower .tcard .tc-lbl { font-size: 13px; } .hud-tower .tcard .tc-time { font-size: 19px; }
 @media (max-height: 700px) { .hud-tower .trow { line-height: 1.12; font-size: 10.5px; } }
+.tvhead .tstate { position: relative; overflow: hidden; height: 0; transition: height .5s cubic-bezier(.4, 0, .2, 1); }
+.tvhead .tsin { opacity: 0; transform: translateY(-12px); transition: opacity .4s ease, transform .45s cubic-bezier(.2, .8, .2, 1); }
+.tvhead .tsin.show { opacity: 1; transform: none; }
+.tvhead .tsin.tsout { position: absolute; left: 0; right: 0; top: 0; opacity: 0; transform: translateY(8px); transition: opacity .3s ease, transform .3s ease; }
+.tv { transition: border-color .5s ease; }
 </style>
 </head>
 <body>
@@ -5353,7 +5358,7 @@ const DISTS = [
   { k: '5', n: '5 tours', f: () => 5 }, { k: '15', n: '15 %', f: L => Math.max(5, Math.round(L * .15)) }, { k: '25', n: '25 %', f: L => Math.max(6, Math.round(L * .25)) },
   { k: '50', n: '50 %', f: L => Math.round(L * .5) }, { k: '100', n: '100 %', f: L => L },
 ];
-const APP_VER = '9 nov. · volant + classement complet';
+const APP_VER = '9 nov. · bandeaux fluides';
 const QFMT = [{ k: 'court', n: 'Courtes', d: [360, 300, 240], h: 'Q1 6 min · Q2 5 min · Q3 4 min' }, { k: 'moyen', n: 'Moyennes', d: [600, 480, 360], h: 'Q1 10 min · Q2 8 min · Q3 6 min' }, { k: 'reel', n: 'Réelles', d: [1080, 900, 720], h: 'Q1 18 min · Q2 15 min · Q3 12 min (comme en vrai)' }];
 const fmtClock = t => { t = Math.max(0, Math.ceil(t)); return Math.floor(t / 60) + ':' + String(t % 60).padStart(2, '0'); };
 const AI_LV = [{ n: 'Facile', off: 5 }, { n: 'Normal', off: 2.2 }, { n: 'Difficile', off: .9 }, { n: 'Légende', off: 0 }];
@@ -5767,8 +5772,22 @@ function tvHead(el, r) {
   else if (rc && (rc.flag === 'yellow' || rc.flag === 'dyellow')) { st = B('yellow', (rc.flag === 'dyellow' ? 'DOUBLE ' : '') + 'DRAPEAU JAUNE', 'SECTEUR ' + rc.sector); cls = 'yellow'; }
   else if (rc && rc.flag === 'green' && rc.lastT && r.t - rc.lastT < 8 && r.t > 8) { st = B('green', 'DRAPEAU VERT', 'PISTE DÉGAGÉE'); cls = 'green'; }
   const key = ses + '|' + lap + '|' + st;
-  if (h._k !== key) { h._k = key; $('.ses', h).textContent = ses; $('.lapl', h).innerHTML = lap; $('.tstate', h).innerHTML = st; }
+  if (h._k !== key) { h._k = key; $('.ses', h).textContent = ses; $('.lapl', h).innerHTML = lap; setTState($('.tstate', h), st); }
   if (box._cls !== cls) { if (box._cls) box.classList.remove('st-' + box._cls); if (cls) box.classList.add('st-' + cls); box._cls = cls; }
+}
+// bandeau / carte qui s'ouvre, se referme ou se remplace en douceur (hauteur animée + fondu)
+function setTState(ts, html) {
+  if (ts._html === html) return; ts._html = html;
+  const old = ts.lastElementChild, from = ts.offsetHeight;
+  ts.style.height = from + 'px';
+  if (old) { old.classList.add('tsout'); old.classList.remove('show'); }
+  let inner = null;
+  if (html) { inner = document.createElement('div'); inner.className = 'tsin'; inner.innerHTML = html; ts.appendChild(inner); }
+  const to = inner ? inner.offsetHeight : 0;
+  void ts.offsetHeight;
+  requestAnimationFrame(() => { ts.style.height = to + 'px'; if (inner) inner.classList.add('show'); });
+  clearTimeout(ts._t);
+  ts._t = setTimeout(() => { [...ts.children].forEach(c => { if (c.classList.contains('tsout')) c.remove(); }); if (ts._html === html) ts.style.height = html ? 'auto' : '0px'; }, 550);
 }
 function renderTower(el, full) {
   const r = Game.race, L = r.T.L, lead = r.order[0];
