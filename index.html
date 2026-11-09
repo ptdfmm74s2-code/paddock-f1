@@ -306,7 +306,7 @@ table.std td.r, table.std th.r { text-align: right; }
 .has-touch .minimap { display: none; }
 @media (max-height: 560px) {
   .hud-tower { width: 150px; }
-  .hud-tower .tower-body { max-height: 32vh !important; }
+
   .hud-tower .trow { font-size: 11px; }
   .hud-top { max-width: calc(100% - 330px); right: 50%; transform: translateX(50%); top: 6px; }
   .hud-top .hud-box { padding: 3px 7px; } .hud-top .hud-box .v { font-size: 14px; }
@@ -433,6 +433,14 @@ table.std td.r, table.std th.r { text-align: right; }
 .tv .trow.mine { background: color-mix(in srgb, var(--team) 14%, transparent); }
 .tv .trow.out .g { color: #7d8696; font-style: italic; }
 .hud-tower.tv .tvhead .brand b { font-size: 14px; } .hud-tower.tv .tcard .tc-big .num { font-size: 34px; }
+/* cockpit : les 22 pilotes visibles d'un coup */
+.hud-tower { max-height: calc(100vh - 20px); display: flex; flex-direction: column; }
+.hud-tower .tower-body { flex: 0 1 auto; overflow: auto; }
+.hud-tower .trow { padding-top: 0; padding-bottom: 0; line-height: 1.32; font-size: 12px; }
+.hud-tower .tvhead .brand { padding: 4px 6px 3px; } .hud-tower .tvhead .lapl { padding: 2px 6px; font-size: 12px; } .hud-tower .tvhead .lapl b { font-size: 14px; }
+.hud-tower .tban { padding: 3px 5px; } .hud-tower .tban b { font-size: 12.5px; } .hud-tower .tban span { font-size: 9.5px; }
+.hud-tower .tcard { padding: 4px 6px 5px; gap: 1px; } .hud-tower .tcard .tc-big .num { font-size: 26px !important; } .hud-tower .tcard .tc-lbl { font-size: 13px; } .hud-tower .tcard .tc-time { font-size: 19px; }
+@media (max-height: 700px) { .hud-tower .trow { line-height: 1.12; font-size: 10.5px; } }
 </style>
 </head>
 <body>
@@ -2496,6 +2504,8 @@ class World {
       m.spin = (m.spin + (c.v + (c.rv || 0)) * dt / .37) % (Math.PI * 2);
       const st = c.manual ? -(c.steer || 0) * .35 : -Math.atan(3.6 * (T.k[c.ti] || 0)) * 1.2;
       m.wheels.forEach((wh, k) => { wh.w.rotation.x = m.spin; if (k < 2) wh.pivot.rotation.y = clamp(st, -.4, .4); });
+      // le volant tourne avec la direction
+      if (m.sw && m.sw.length) { const a = clamp(-st * 2.6, -1.5, 1.5); if (m.swA !== a) { m.swA = a; for (const p of m.sw) p.quaternion.setFromAxisAngle(CarGLB.SWA, a); } }
       m.rainL.material.color.copy(r.w > .15 && blink ? this.cRed : this.cRain);
     }
     const lit = r.phase === 'grid' ? Math.max(0, r.lights) : 0;
@@ -2878,7 +2888,8 @@ function makeCarHQ(c, Q) {
   const accM = PHYS[accKey] || (PHYS[accKey] = new THREE.MeshPhysicalMaterial({ color: t.acc === '#FFFFFF' || t.acc === '#F2F2F2' ? t.body : t.acc, roughness: .35, metalness: .1, clearcoat: .8, clearcoatRoughness: .1, side: THREE.DoubleSide }));
   const carbM = PHYS.carbon || (PHYS.carbon = new THREE.MeshPhysicalMaterial({ map: carbonTex(), color: 0xffffff, roughness: .36, metalness: .25, clearcoat: .7, clearcoatRoughness: .15 }));
   const glb = CarGLB.st === 'ready';
-  if (glb) g.add(CarGLB.build(c, Q, sh));
+  let sw = null;
+  if (glb) { const cg = CarGLB.build(c, Q, sh); sw = cg.userData.sw; g.add(cg); }
   else {
     add(G.body, paint);
     add(G.wings, carbM);
@@ -2919,7 +2930,7 @@ function makeCarHQ(c, Q) {
   const rainL = new THREE.Mesh(G.rain, new THREE.MeshBasicMaterial({ color: 0x330000 })); if (glb) rainL.position.set(0, .27, -2.47); else rainL.position.set(0, .26, -2.98); g.add(rainL);
   const shd = new THREE.Mesh(G.shadow, new THREE.MeshBasicMaterial({ color: 0, transparent: true, opacity: sh ? .25 : .45, depthWrite: false, map: TEX.soft }));
   shd.rotation.x = -Math.PI / 2; shd.position.y = .04; g.add(shd);
-  return { g, ringMat, comp: c.comp, wheels, rainL, spin: 0, hq: true, glb, sides };
+  return { g, ringMat, comp: c.comp, wheels, rainL, spin: 0, hq: true, glb, sides, sw };
 }
 /* ---------------- MODÈLE 3D DÉTAILLÉ ----------------
    « 2026 Redbull RB22 » par Dave Love (Sketchfab), licence CC BY 4.0, allégé pour l'iPad.
@@ -2990,8 +3001,8 @@ const CarGLB = {
       const fin = () => { this.st = this.hi ? 'ready' : 'error'; res(); };
       const go = () => {
         const L = new THREE.GLTFLoader(); let n = 0; const done = () => { if (++n === 2) fin(); };
-        L.load('rb22.glb', g => { try { this.hi = this.prep(g.scene); } catch (e) { this.err = e.message; } done(); }, null, e => { this.err = String(e && e.message || e); done(); });
-        L.load('rb22-lo.glb', g => { try { this.lo = this.prep(g.scene); } catch (e) { } done(); }, null, () => done());
+        L.load('rb22.glb', g => { try { this.hi = this.splitSW(this.prep(g.scene)); } catch (e) { this.err = e.message; } done(); }, null, e => { this.err = String(e && e.message || e); done(); });
+        L.load('rb22-lo.glb', g => { try { this.lo = this.splitSW(this.prep(g.scene)); } catch (e) { } done(); }, null, () => done());
       };
       if (THREE.GLTFLoader) return go();
       const s = document.createElement('script');
@@ -3068,22 +3079,49 @@ const CarGLB = {
     }
     return this.teamMats[t.id] = M;
   },
+  // volant : pièces qui tournent autour de la colonne de direction
+  SW: /steeringwheel|kers_blue|gp21_LCD|clearled|sw_decals/, SWC: new THREE.Vector3(0, .578, .7), SWA: new THREE.Vector3(0, 0, 1),
+  // morceaux d'autres pièces situés dans le volant (jante, poignées) : on les détache pour qu'ils tournent avec lui
+  splitSW(parts) {
+    const out = [], B = { x0: -.14, x1: .14, y0: .48, y1: .665, z0: .64, z1: .8 }, v = new THREE.Vector3();
+    for (const p of parts) {
+      const g = p.geo, idx = g.index, pos = g.attributes.position;
+      if (this.SW.test(p.name) || !idx) { out.push(p); continue; }
+      const keep = [], take = [];
+      for (let t = 0; t < idx.count; t += 3) {
+        const a = idx.getX(t), b = idx.getX(t + 1), c = idx.getX(t + 2);
+        const inB = i => { const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i); return x > B.x0 && x < B.x1 && y > B.y0 && y < B.y1 && z > B.z0 && z < B.z1; };
+        (inB(a) && inB(b) && inB(c) ? take : keep).push(a, b, c);
+      }
+      if (!take.length) { out.push(p); continue; }
+      const sub = list => { const n = new THREE.BufferGeometry(); for (const k in g.attributes) n.setAttribute(k, g.attributes[k]); n.setIndex(list); n.computeBoundingSphere(); return n; };
+      out.push({ ...p, geo: sub(keep) }, { ...p, geo: sub(take), sw: true });
+    }
+    return out;
+  },
   build(c, Q, sh) {
     const M = this.matsFor(c.team), numSrc = this.hi.find(p => /number/.test(p.name));
     const numM = numSrc ? numSrc.mat.clone() : null; if (numM) numM.map = this.numTex(c.drv);
+    const sws = [];
     const mk = (parts, shadow) => {
-      const g = new THREE.Group();
+      const g = new THREE.Group(); let pivot = null;
       for (const p of parts) {
         const m = /number/.test(p.name) ? (numSrc ? numM : null) : M[p.name];
         if (!m) continue;
+        if (p.sw || this.SW.test(p.name)) {
+          if (!pivot) { pivot = new THREE.Group(); pivot.position.copy(this.SWC); g.add(pivot); sws.push(pivot); }
+          if (!p.swGeo) { p.swGeo = p.geo.clone(); p.swGeo.translate(-this.SWC.x, -this.SWC.y, -this.SWC.z); p.swGeo.computeBoundingSphere(); }
+          const me = new THREE.Mesh(p.swGeo, m); pivot.add(me); continue;
+        }
         const me = new THREE.Mesh(p.geo, m); me.castShadow = shadow; me.receiveShadow = false; g.add(me);
       }
       return g;
     };
-    if (!this.lo) return mk(this.hi, sh);
-    const lod = new THREE.LOD();
-    lod.addLevel(mk(this.hi, sh), 0); lod.addLevel(mk(this.lo, sh), Q >= 3 ? 45 : Q >= 2 ? 30 : 14);
-    return lod;
+    let out;
+    if (!this.lo) out = mk(this.hi, sh);
+    else { out = new THREE.LOD(); out.addLevel(mk(this.hi, sh), 0); out.addLevel(mk(this.lo, sh), Q >= 3 ? 45 : Q >= 2 ? 30 : 14); }
+    out.userData.sw = sws;
+    return out;
   },
 };
 /* ---------------- DÉCOR IMPORTÉ ----------------
@@ -5315,7 +5353,7 @@ const DISTS = [
   { k: '5', n: '5 tours', f: () => 5 }, { k: '15', n: '15 %', f: L => Math.max(5, Math.round(L * .15)) }, { k: '25', n: '25 %', f: L => Math.max(6, Math.round(L * .25)) },
   { k: '50', n: '50 %', f: L => Math.round(L * .5) }, { k: '100', n: '100 %', f: L => L },
 ];
-const APP_VER = '9 nov. · classement TV';
+const APP_VER = '9 nov. · volant + classement complet';
 const QFMT = [{ k: 'court', n: 'Courtes', d: [360, 300, 240], h: 'Q1 6 min · Q2 5 min · Q3 4 min' }, { k: 'moyen', n: 'Moyennes', d: [600, 480, 360], h: 'Q1 10 min · Q2 8 min · Q3 6 min' }, { k: 'reel', n: 'Réelles', d: [1080, 900, 720], h: 'Q1 18 min · Q2 15 min · Q3 12 min (comme en vrai)' }];
 const fmtClock = t => { t = Math.max(0, Math.ceil(t)); return Math.floor(t / 60) + ':' + String(t % 60).padStart(2, '0'); };
 const AI_LV = [{ n: 'Facile', off: 5 }, { n: 'Normal', off: 2.2 }, { n: 'Difficile', off: .9 }, { n: 'Légende', off: 0 }];
@@ -5944,7 +5982,7 @@ function buildCockpit() {
   const el = $('#scr-cockpit');
   el.innerHTML = `<div class="view" id="ck-view"><div class="ovl"><div class="vign"></div><div class="rainfx"></div><div class="flagwrap" id="ck-flag"></div></div></div>
     <div class="mirror" id="ck-mirror"></div>
-    <div class="hud-tower"><div class="tower-head"><span>${quali ? 'QUALIFS' : 'TOUR'}</span><span class="num" id="ck-lap"></span></div><div class="tower-body" id="ck-tower" style="max-height:44vh"></div></div>
+    <div class="hud-tower"><div class="tower-head"><span>${quali ? 'QUALIFS' : 'TOUR'}</span><span class="num" id="ck-lap"></span></div><div class="tower-body" id="ck-tower"></div></div>
     <div class="hud-top">
       <div class="hud-box"><span class="k">${quali ? 'Tour en cours' : 'Position'}</span><span class="v num" id="ck-pos"></span></div>
       <div class="hud-box"><span class="k">Dernier</span><span class="v num" id="ck-last"></span></div>
