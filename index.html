@@ -1147,12 +1147,15 @@ class Race {
   // le joueur pilote lui-même son tour de formation : vitesse limitée, pas de dépassement, il s'arrête sur son emplacement
   formPlayer(c, a, dt, inp) {
     const T = this.T, L = T.L, slot = c.slot + L;
+    // arrêté sur son emplacement : la voiture est bloquée jusqu'au départ (on peut juste faire monter le régime)
+    if (c.formDone) { c.v = 0; c.rv = 0; c.thr = inp.thr || 0; c.brk = 1; c.gear = 1; c.rpm = 5000 + c.thr * 6000; return; }
     this.playerStep(c, dt, inp);
     if (c.v > 55) c.v = 55;
     if (a) { const gap = a.dist - c.dist; if (gap < 9) { c.v = Math.min(c.v, a.v * .9); if (gap < 6) c.v = Math.min(c.v, a.v * .5); } }
     const rem = slot - c.dist; c.formRem = rem;
     if (rem < 60 && rem > -20) c.v = Math.min(c.v, Math.max(3, Math.sqrt(2 * 6 * Math.max(0, rem)) + 2));
-    if (Math.abs(rem) < 7 && c.v < .6) c.formDone = true;
+    c.formLat = (c.d || 0) - c.d0;
+    if (Math.abs(rem) < 4 && Math.abs(c.formLat) < 2.2 && c.v < .6 && !c.rv) { c.formDone = true; c.v = 0; this.ev.push({ k: 'formslot', c }); }
     for (let q = 0; q < 4; q++) c.temps[q] += ((Math.abs(c.steer) > .3 ? 90 : 80) - c.temps[q]) * Math.min(1, dt * .08);
     const G = [0, 19, 29, 39, 49, 59, 69, 79, 999]; let g = 1; while (g < 8 && c.v > G[g]) g++; c.gear = c.v < .5 ? 1 : g;
     c.rpm = c.v < .5 ? 5000 + c.thr * 5000 : 6000 + 5000 * clamp((c.v - G[g - 1]) / (G[g] - G[g - 1] || 10), 0, 1);
@@ -2539,6 +2542,7 @@ class World {
     this.setWeather(r.w, r.rain);
     this.syncFlags();
     if (this.syncRecov) this.syncRecov(dt);
+    if (this.syncGridMark) this.syncGridMark(dt);
     if (this.updateCrew) this.updateCrew(dt);
   }
   // ---- caméras ----
@@ -3773,6 +3777,35 @@ World.prototype.syncRecov = function (dt) {
   }
 };
 
+// Tour de formation : cadre lumineux au sol sur l'emplacement de grille du joueur, avec une flèche au-dessus
+World.prototype.syncGridMark = function (dt) {
+  const r = this.race, me = r.cars.find(c => c.isPlayer && c.manual);
+  const on = r.phase === 'formation' && me && me.slot !== undefined;
+  if (!on) { if (this.gmark) { this.scene.remove(this.gmark.g); this.gmark = null; } return; }
+  let M = this.gmark;
+  if (!M) {
+    const g = new THREE.Group(), mt = new THREE.MeshBasicMaterial({ color: 0xffd400, transparent: true, opacity: .9, depthWrite: false }), W = 2.6, L = 6, t = .22;
+    const bar = (w, l, x, z) => { const m = new THREE.Mesh(new THREE.PlaneGeometry(w, l), mt); m.rotation.x = -Math.PI / 2; m.position.set(x, .06, z); g.add(m); };
+    bar(t, L, -W / 2, 0); bar(t, L, W / 2, 0); bar(W + t, t, 0, -L / 2); bar(W + t, t, 0, L / 2);
+    const fill = new THREE.Mesh(new THREE.PlaneGeometry(W, L), new THREE.MeshBasicMaterial({ color: 0xffd400, transparent: true, opacity: .16, depthWrite: false })); fill.rotation.x = -Math.PI / 2; fill.position.y = .05; g.add(fill);
+    // flèche qui flotte au-dessus et pointe vers le sol
+    const ar = new THREE.Group(), am = new THREE.MeshBasicMaterial({ color: 0xffd400 });
+    const cone = new THREE.Mesh(new THREE.ConeGeometry(.55, 1.1, 4), am); cone.rotation.x = Math.PI; ar.add(cone);
+    const stem = new THREE.Mesh(new THREE.BoxGeometry(.32, 1.1, .32), am); stem.position.y = 1.05; ar.add(stem);
+    g.add(ar);
+    const T = this.T, p = trackPoint(T, me.slot, me.d0, {});
+    g.position.set(p.x, p.y, p.z); g.rotation.y = p.h;
+    g.renderOrder = 2; this.scene.add(g);
+    M = this.gmark = { g, mt, fill, ar, am };
+  }
+  const t = this.time, done = me.formDone, near = me.formRem != null && me.formRem < 150;
+  const col = done ? 0x2bd67b : 0xffd400;
+  M.mt.color.setHex(col); M.fill.material.color.setHex(col); M.am.color.setHex(col);
+  M.mt.opacity = done ? .95 : .55 + .4 * (.5 + .5 * Math.sin(t * 6));
+  M.ar.visible = !done; M.ar.position.y = 2.6 + Math.sin(t * 3.2) * .35; M.ar.rotation.y = t * 1.5;
+  M.g.visible = near || done;
+};
+
 /* =====================================================================
    SON : bips radio, grésillement, moteur (Web Audio)
    ===================================================================== */
@@ -4478,8 +4511,11 @@ const Brain = {
       }
       case 'restart': if (typeof rcBanner === 'function') rcBanner('Drapeau vert — la course reprend'); { const c = pilot ? me : r.cars.find(x => this.mine(x) && !x.dnf); if (c) (pilot && c.isPlayer) ? this.eng(c, 'Vert, vert, vert ! Attaque !', { sys: true }) : this.drv(c, 'C\'est reparti !'); } break;
       case 'formstart':
-        if (pilot) this.eng(me, `Bienvenue au ${gpName(TRACKS[Game.wk.gp])}. ${wkWeatherLine()} Tour de formation, c'est toi qui pilotes : chauffe les pneus en zigzaguant et les freins, reste derrière la voiture devant, pas de dépassement. À la fin du tour, arrête-toi sur ton emplacement de la grille.`);
+        if (pilot) this.eng(me, `Bienvenue au ${gpName(TRACKS[Game.wk.gp])}. ${wkWeatherLine()} Tour de formation, c'est toi qui pilotes : chauffe les pneus en zigzaguant et les freins, reste derrière la voiture devant, pas de dépassement. À la fin du tour, arrête-toi dans le cadre jaune de ton emplacement : une fois arrêté dedans, tu ne bouges plus jusqu'au départ.`);
         else this.later(() => this.drv(r.cars.find(x => x.team === r.myTeam), pick(['Tour de formation, je chauffe les pneus.', 'Radio check, tout est bon de mon côté.', 'Les freins sont un peu froids, je les chauffe.'])), 3);
+        break;
+      case 'formslot':
+        if (pilot && ev.c === me) this.eng(me, pick(['Parfait, tu es dans ton emplacement. Ne bouge plus, attends les autres.', 'C\'est bon, tu es en place. Freins serrés, on attend la fin de la grille.']), { q: 1 });
         break;
       case 'formend':
         if (pilot) this.eng(me, pick(['Tout le monde est en place. Concentre-toi sur les feux. Mode départ, batterie pleine.', 'Grille complète. Embrayage prêt, attends l\'extinction des feux.']));
@@ -5525,7 +5561,7 @@ const DISTS = [
   { k: '5', n: '5 tours', f: () => 5 }, { k: '15', n: '15 %', f: L => Math.max(5, Math.round(L * .15)) }, { k: '25', n: '25 %', f: L => Math.max(6, Math.round(L * .25)) },
   { k: '50', n: '50 %', f: L => Math.round(L * .5) }, { k: '100', n: '100 %', f: L => L },
 ];
-const APP_VER = '10 nov. · grue de dépannage';
+const APP_VER = '10 nov. · emplacement sur la grille';
 const QFMT = [{ k: 'court', n: 'Courtes', d: [360, 300, 240], h: 'Q1 6 min · Q2 5 min · Q3 4 min' }, { k: 'moyen', n: 'Moyennes', d: [600, 480, 360], h: 'Q1 10 min · Q2 8 min · Q3 6 min' }, { k: 'reel', n: 'Réelles', d: [1080, 900, 720], h: 'Q1 18 min · Q2 15 min · Q3 12 min (comme en vrai)' }];
 const fmtClock = t => { t = Math.max(0, Math.ceil(t)); return Math.floor(t / 60) + ':' + String(t % 60).padStart(2, '0'); };
 const AI_LV = [{ n: 'Facile', off: 5 }, { n: 'Normal', off: 2.2 }, { n: 'Difficile', off: .9 }, { n: 'Légende', off: 0 }];
@@ -6279,7 +6315,7 @@ function updateCockpit() {
   big.className = 'bigmsg' + (r.flag && me.fin ? ' chequer' : '');
   if ($('#ck-skipf') && r.phase !== 'formation') $('#ck-skipf').remove();
   big.classList.toggle('small', r.phase === 'formation');
-  big.textContent = r.phase === 'formation' ? (me.formDone ? 'EN PLACE — ATTENDS LES AUTRES' : me.formRem != null && me.formRem < 120 && me.formRem > -20 ? `TON EMPLACEMENT : ${Math.max(0, Math.round(me.formRem))} m` : 'TOUR DE FORMATION') : quali ? (r.q.state === 'break' || r.q.done ? (me.qOut && me.qOut < r.q.part ? '' : `P${me.pos}`) : '') : r.phase === 'race' && r.t < 1.5 ? 'GO !' : me.fin ? 'P' + me.pos : '';
+  big.textContent = r.phase === 'formation' ? (me.formDone ? 'EN PLACE — ATTENDS LES AUTRES' : me.formRem != null && me.formRem < 120 && me.formRem > -20 ? (Math.abs(me.formRem) < 4 && Math.abs(me.formLat || 0) >= 2.2 ? 'METS-TOI DANS LE CADRE' : me.formRem < -4 ? 'TROP LOIN — RECULE (FREIN À L\'ARRÊT)' : Math.abs(me.formRem) < 4 ? 'ARRÊTE-TOI DANS LE CADRE' : `TON EMPLACEMENT : ${Math.round(me.formRem)} m`) : 'TOUR DE FORMATION') : quali ? (r.q.state === 'break' || r.q.done ? (me.qOut && me.qOut < r.q.part ? '' : `P${me.pos}`) : '') : r.phase === 'race' && r.t < 1.5 ? 'GO !' : me.fin ? 'P' + me.pos : '';
   drawMiniMap();
 }
 function updateDash() {
