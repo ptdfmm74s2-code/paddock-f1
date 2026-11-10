@@ -446,6 +446,9 @@ table.std td.r, table.std th.r { text-align: right; }
 .tvhead .tsin.show { opacity: 1; transform: none; }
 .tvhead .tsin.tsout { position: absolute; left: 0; right: 0; top: 0; opacity: 0; transform: translateY(8px); transition: opacity .3s ease, transform .3s ease; }
 .tv { transition: border-color .5s ease; }
+.tbtn.lbk { right: calc(max(12px, env(safe-area-inset-right)) + clamp(76px, 13vw, 150px) + 10px + (clamp(76px, 13vw, 150px) - 52px) / 2); bottom: calc(max(12px, env(safe-area-inset-bottom)) + clamp(90px, 30vh, 220px) + 14px); width: 52px; height: 52px; border-radius: 50%; font-size: 7.5px; letter-spacing: .03em; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; background: rgba(16,20,27,.8); border-color: rgba(255,255,255,.35); }
+.tbtn.lbk .ic { width: 18px; height: 18px; transform: scaleX(-1); }
+.tbtn.lbk.on { background: #fff; color: #111; }
 </style>
 </head>
 <body>
@@ -2546,6 +2549,13 @@ class World {
     g.updateMatrixWorld();
     const local = (x, y, z, out) => out.set(x, y, z).applyMatrix4(g.matrixWorld);
     let fov = 60; cam.near = .1;
+    // bouton « ARRIÈRE » maintenu : la caméra reste sur la voiture du joueur mais regarde derrière
+    if (c.isPlayer && /^(onboard|eyes|tcam|chase)$/.test(spec.type) && typeof Input !== 'undefined' && Input.lookBack()) {
+      if (spec.type === 'chase') { local(0, 2.3, 7.2, v); local(0, 1.0, -12, lk); cam.position.copy(v); cam.lookAt(lk); fov = 66; st.pos = null; }
+      else { local(0, m.glb ? 1.5 : 1.55, -.05, v); local(0, 1.0, -20, lk); cam.position.copy(v); cam.lookAt(lk); fov = 70; cam.near = .05; }
+      cam.fov = fov; cam.aspect = aspect; cam.updateProjectionMatrix();
+      return c;
+    }
     switch (spec.type) {
       case 'onboard': if (m.glb) local(0, 1.27, -.12, v); else local(0, 1.3, -.52, v); local(0, .66, 3.4, lk); cam.position.copy(v); cam.lookAt(lk); fov = 66; cam.near = .03; break;
       case 'eyes': local(0, .98, .08, v); local(0, .8, 16, lk); cam.position.copy(v); cam.lookAt(lk); fov = 72; cam.near = .03; break;
@@ -5358,7 +5368,7 @@ const DISTS = [
   { k: '5', n: '5 tours', f: () => 5 }, { k: '15', n: '15 %', f: L => Math.max(5, Math.round(L * .15)) }, { k: '25', n: '25 %', f: L => Math.max(6, Math.round(L * .25)) },
   { k: '50', n: '50 %', f: L => Math.round(L * .5) }, { k: '100', n: '100 %', f: L => L },
 ];
-const APP_VER = '9 nov. · bandeaux fluides';
+const APP_VER = '10 nov. · regard arrière';
 const QFMT = [{ k: 'court', n: 'Courtes', d: [360, 300, 240], h: 'Q1 6 min · Q2 5 min · Q3 4 min' }, { k: 'moyen', n: 'Moyennes', d: [600, 480, 360], h: 'Q1 10 min · Q2 8 min · Q3 6 min' }, { k: 'reel', n: 'Réelles', d: [1080, 900, 720], h: 'Q1 18 min · Q2 15 min · Q3 12 min (comme en vrai)' }];
 const fmtClock = t => { t = Math.max(0, Math.ceil(t)); return Math.floor(t / 60) + ':' + String(t % 60).padStart(2, '0'); };
 const AI_LV = [{ n: 'Facile', off: 5 }, { n: 'Normal', off: 2.2 }, { n: 'Difficile', off: .9 }, { n: 'Légende', off: 0 }];
@@ -6027,7 +6037,7 @@ function buildCockpit() {
     </div>
     ${!quali && r.phase === 'formation' ? `<button class="btn small skipf" id="ck-skipf">${ic('ff')} Passer le tour de formation</button>` : ''}
     ${quali ? `<button class="btn primary big qgo" id="ck-go" hidden>${ic('garage')} SORTIR EN PISTE</button><button class="btn primary big qgo" id="ck-qnext" hidden>${ic('ff')} <span></span></button>` : ''}
-    <div class="touch"><div class="ersfab"><button class="rbtn" id="ck-ersb2" aria-label="Mode ERS">${ic('bolt')}<span>NORMAL</span></button><button class="rbtn ovt" id="ck-ovt2" aria-label="Overtake" disabled>OVT</button></div><div class="tbtn" data-t="l" aria-label="Gauche">${ic('left')}</div><div class="tbtn" data-t="r" aria-label="Droite">${ic('right')}</div><div class="tbtn" data-t="b" aria-label="Frein">FREIN</div><div class="tbtn" data-t="t" aria-label="Accélérateur">GAZ</div></div>`;
+    <div class="touch"><div class="ersfab"><button class="rbtn" id="ck-ersb2" aria-label="Mode ERS">${ic('bolt')}<span>NORMAL</span></button><button class="rbtn ovt" id="ck-ovt2" aria-label="Overtake" disabled>OVT</button></div><div class="tbtn" data-t="l" aria-label="Gauche">${ic('left')}</div><div class="tbtn" data-t="r" aria-label="Droite">${ic('right')}</div><div class="tbtn lbk" data-t="lb" aria-label="Regarder derrière">${ic('cam')}<span>ARRIÈRE</span></div><div class="tbtn" data-t="b" aria-label="Frein">FREIN</div><div class="tbtn" data-t="t" aria-label="Accélérateur">GAZ</div></div>`;
   Radio.mount($('#ck-view')); Comm.mount($('#ck-view'));
   $('#ck-view').insertAdjacentHTML('beforeend', `<div class="lights" id="ck-lights" style="display:${quali ? 'none' : 'flex'}">${'<i></i>'.repeat(5)}</div><div class="bigmsg" id="ck-big"></div>`);
   $('#ck-view-btn').onclick = cycleView;
@@ -6262,7 +6272,9 @@ function renderResults(rows, r) {
 
 /* ---------------- ENTRÉES ---------------- */
 const Input = {
-  keys: {}, touch: { l: 0, r: 0, t: 0, b: 0 }, steer: 0,
+  keys: {}, touch: { l: 0, r: 0, t: 0, b: 0, lb: 0 }, steer: 0,
+  // regarder derrière : tant que le bouton (ou la touche R / bouton LB de la manette) est maintenu
+  lookBack() { const pads = navigator.getGamepads ? navigator.getGamepads() : [], gp = pads && [...pads].find(p => p && p.connected); return !!(this.touch.lb || this.keys.KeyR || (gp && gp.buttons[4]?.pressed)); },
   read(dt) {
     const k = this.keys, T = this.touch;
     let st = ((k.ArrowRight || k.KeyD || T.r) ? 1 : 0) - ((k.ArrowLeft || k.KeyA || T.l) ? 1 : 0);
