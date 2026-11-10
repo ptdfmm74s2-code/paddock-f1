@@ -5917,53 +5917,63 @@ const Net = {
     bc.postMessage({ hi: 1 });
     return true;
   },
-  // Relais via un serveur MQTT public (WebSocket sécurisé) : marche quel que soit le réseau (box, 4G/5G)
+  // Relais via des serveurs MQTT publics (WebSocket sécurisé) : marche quel que soit le réseau (box, 4G/5G).
+  // On se connecte à TOUS les serveurs en même temps et on envoie sur chacun : les deux appareils se retrouvent
+  // même si l'un d'eux n'arrive pas à joindre un des serveurs (avant, chacun prenait « le premier qui répond »).
   async openMqtt() {
     this.kind = 'mqtt';
     if (!window.mqtt) await loadScript('https://unpkg.com/mqtt@5.10.1/dist/mqtt.min.js');
     const q = new URLSearchParams(location.search).get('mqtt');
-    const brokers = q ? [q] : ['wss://broker.hivemq.com:8884/mqtt', 'wss://broker.emqx.io:8084/mqtt', 'wss://test.mosquitto.org:8081/mqtt'];
-    this.me = Math.random().toString(36).slice(2, 10);
-    this.base = 'paddockf1/v2/' + this.code.toLowerCase() + '/';
-    for (const url of brokers) {
-      try {
-        this.mq = await new Promise((res, rej) => {
-          const c = mqtt.connect(url, { clientId: 'pf1-' + this.me, clean: true, connectTimeout: 7000, reconnectPeriod: 2000, keepalive: 20 });
-          const t = setTimeout(() => { c.end(true); rej(new Error('timeout')); }, 8000);
-          c.once('connect', () => { clearTimeout(t); res(c); });
-          c.once('error', e => { clearTimeout(t); c.end(true); rej(e); });
-        });
-        this.broker = url; break;
-      } catch (e) { this.mq = null; }
-    }
-    if (!this.mq) throw new Error('Impossible de joindre le serveur de jeu. Vérifie ta connexion Internet puis réessaie.');
-    this.mq.subscribe(this.base + '#', { qos: 0 });
-    this.mq.on('message', (topic, payload) => {
+    const brokers = q ? q.split(',') : ['wss://broker.hivemq.com:8884/mqtt', 'wss://broker.emqx.io:8084/mqtt', 'wss://test.mosquitto.org:8081/mqtt'];
+    this.me = Math.random().toString(36).slice(2, 10); this.seq = 0; this.seen = new Map();
+    this.base = 'paddockf1/v3/' + this.code.toLowerCase() + '/';
+    this.mqs = []; this.brokersOk = [];
+    const onMsg = (topic, payload) => {
       let m; try { m = JSON.parse(payload.toString()); } catch (e) { return; }
       if (!m || m.f === this.me) return;
+      // même message reçu par plusieurs serveurs : on ne le traite qu'une fois
+      if (m.i) { const k = m.f + ':' + m.i; if (this.seen.has(k)) return; this.seen.set(k, Date.now()); if (this.seen.size > 600) { const old = Date.now() - 20000; for (const [kk, t] of this.seen) if (t < old) this.seen.delete(kk); } }
       this.lastSeen = Date.now(); this.setPartner(true);
       const t = topic.slice(this.base.length);
       if (t === 'hb') { if (m.d && m.d.q) this.send('hb', {}); return; }
       this.fire(t, m.d);
+    };
+    const connect = url => new Promise(res => {
+      let c; try { c = mqtt.connect(url, { clientId: 'pf1-' + this.me + '-' + Math.random().toString(36).slice(2, 6), clean: true, connectTimeout: 9000, reconnectPeriod: 2500, keepalive: 20, resubscribe: true }); } catch (e) { return res(null); }
+      let done = false;
+      const t = setTimeout(() => { if (!done) { done = true; res(null); } }, 10000); // on n'attend pas plus : il continue d'essayer en arrière-plan
+      c.on('connect', () => {
+        c.subscribe(this.base + '#', { qos: 0 });
+        if (!this.brokersOk.includes(url)) this.brokersOk.push(url);
+        if (this.kind === 'mqtt') this.sendOn(c, 'hb', { q: 1 });
+        if (!done) { done = true; clearTimeout(t); res(c); }
+      });
+      c.on('message', onMsg);
+      c.on('error', () => { });
+      this.mqs.push(c);
     });
-    this.hb = setInterval(() => { this.send('hb', {}); if (this.partner && Date.now() - (this.lastSeen || 0) > 10000) this.setPartner(false); }, 3000);
+    const first = await new Promise(res => { let n = brokers.length, ok = false; brokers.forEach(u => connect(u).then(c => { if (c && !ok) { ok = true; res(c); } if (--n === 0 && !ok) res(null); })); });
+    if (!first) { this.mqs.forEach(c => { try { c.end(true); } catch (e) { } }); this.mqs = []; throw new Error('Impossible de joindre le serveur de jeu. Vérifie ta connexion Internet puis réessaie.'); }
+    this.mq = first;
+    this.hb = setInterval(() => { this.send('hb', {}); if (this.partner && Date.now() - (this.lastSeen || 0) > 12000) this.setPartner(false); }, 3000);
     this.send('hb', { q: 1 });
     return true;
   },
+  sendOn(c, t, d) { try { if (c.connected) c.publish(this.base + t, JSON.stringify({ f: this.me, i: ++this.seq, d }), { qos: 0 }); } catch (e) { } },
   setPartner(v) { if (this.partner === v) return; this.partner = v; this.fire('__partner', v); },
   send(t, d) {
     try {
       if (this.kind === 'room' && this.room) this.room.emit(t, d).catch(() => { });
-      else if (this.kind === 'mqtt' && this.mq) this.mq.publish(this.base + t, JSON.stringify({ f: this.me, d }), { qos: 0 });
+      else if (this.kind === 'mqtt' && this.mqs) { const msg = JSON.stringify({ f: this.me, i: ++this.seq, d }); for (const c of this.mqs) if (c.connected) c.publish(this.base + t, msg, { qos: 0 }); }
       else if (this.kind === 'local' && this.bc) this.bc.postMessage({ t, d });
     } catch (e) { }
   },
   close() {
-    try { if (this.room) this.room.leave(); if (this.mq) this.mq.end(true); if (this.bc) this.bc.close(); } catch (e) { }
+    try { if (this.room) this.room.leave(); for (const c of this.mqs || []) c.end(true); if (this.bc) this.bc.close(); } catch (e) { }
     clearInterval(this.hb);
-    Object.assign(this, { kind: null, room: null, mq: null, bc: null, partner: false, h: {} });
+    Object.assign(this, { kind: null, room: null, mq: null, mqs: [], bc: null, partner: false, h: {} });
   },
-  label() { return this.kind === 'room' ? 'salle temps réel de la page' : this.kind === 'mqtt' ? 'serveur relais en ligne' : this.kind === 'local' ? 'test local' : '—'; },
+  label() { return this.kind === 'room' ? 'salle temps réel de la page' : this.kind === 'mqtt' ? `serveurs relais : ${(this.mqs || []).filter(c => c.connected).length} connecté${(this.mqs || []).filter(c => c.connected).length > 1 ? 's' : ''}` : this.kind === 'local' ? 'test local' : '—'; },
 };
 
 const CK = ['S', 'M', 'H', 'I', 'W'], MODES = ['normal', 'push', 'save', 'defend'];
@@ -6085,6 +6095,12 @@ const Mirror = {
 };
 
 /* ---- Écrans du multijoueur ---- */
+// iPad : en revenant dans le jeu (après avoir envoyé le code par message), on se reconnecte tout de suite
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState !== 'visible' || Net.kind !== 'mqtt') return;
+  for (const c of Net.mqs || []) if (!c.connected) try { c.reconnect(); } catch (e) { }
+  setTimeout(() => { Net.send('hb', { q: 1 }); if (Game.mp && !Game.mp.owner && !Game.mp.cfg) Net.send('hello', { v: 1 }); if (Game.mp && Game.mp.owner) Net.send('cfg', Game.mp.cfg); }, 1200);
+});
 function mpCode() { const A = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; let s = ''; for (let i = 0; i < 4; i++) s += A[Math.floor(Math.random() * A.length)]; return s; }
 function renderMulti() {
   const el = $('#scr-setup');
@@ -6096,7 +6112,7 @@ function renderMulti() {
         <button class="btn primary big" id="m-create">Créer une partie ${ic('right')}</button></div>
       <div class="card" style="display:grid;gap:10px;align-content:start"><h3 class="kicker">Rejoindre une partie</h3>
         <label for="m-code" class="muted">Code donné par ton ami</label>
-        <input id="m-code" maxlength="4" autocomplete="off" autocapitalize="characters" placeholder="ex : K7QP" style="font-size:28px;font-weight:900;letter-spacing:.3em;text-transform:uppercase;background:var(--panel-2);border:1px solid var(--line);border-radius:10px;padding:10px 14px;width:100%">
+        <input id="m-code" maxlength="8" autocomplete="off" autocapitalize="characters" placeholder="ex : K7QP" style="font-size:28px;font-weight:900;letter-spacing:.3em;text-transform:uppercase;background:var(--panel-2);border:1px solid var(--line);border-radius:10px;padding:10px 14px;width:100%">
         <button class="btn team big" id="m-join">Rejoindre ${ic('right')}</button></div>
     </div>
     <p class="muted" style="font-size:13px;margin-top:16px">Une personne est <b>pilote</b> (elle conduit, la course tourne sur son appareil) et l'autre est <b>ingénieur</b> au mur des stands. Tout ce que l'un dit à la radio s'affiche par écrit chez l'autre et y est lu à voix haute si les voix sont activées.<br>Sur claude.ai, ton ami doit avoir accès à cette page (bouton Partager, accès Contributeur ou plus).</p>
@@ -6104,7 +6120,8 @@ function renderMulti() {
   $('#m-back').onclick = renderHome;
   $('#m-create').onclick = () => renderSetup('multi');
   const join = async () => {
-    const code = $('#m-code').value.trim().toUpperCase(); if (code.length < 4) return toast('Le code fait 4 caractères.');
+    // code nettoyé (espaces, tirets, point ajouté par le clavier…)
+    const code = $('#m-code').value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 4); if (code.length < 4) return toast('Le code fait 4 caractères.');
     Sfx.init(); Speech.prime();
     $('#m-join').disabled = true; $('#m-join').textContent = 'Connexion…';
     try { await Net.open(code, false); } catch (e) { toast(e.message || 'Connexion impossible.', 5000); renderMulti(); return; }
@@ -6235,7 +6252,7 @@ const DISTS = [
   { k: '5', n: '5 tours', f: () => 5 }, { k: '15', n: '15 %', f: L => Math.max(5, Math.round(L * .15)) }, { k: '25', n: '25 %', f: L => Math.max(6, Math.round(L * .25)) },
   { k: '50', n: '50 %', f: L => Math.round(L * .5) }, { k: '100', n: '100 %', f: L => L },
 ];
-const APP_VER = '10 nov. · mécaniciens et livrées';
+const APP_VER = '10 nov. · multijoueur réparé';
 const QFMT = [{ k: 'court', n: 'Courtes', d: [360, 300, 240], h: 'Q1 6 min · Q2 5 min · Q3 4 min' }, { k: 'moyen', n: 'Moyennes', d: [600, 480, 360], h: 'Q1 10 min · Q2 8 min · Q3 6 min' }, { k: 'reel', n: 'Réelles', d: [1080, 900, 720], h: 'Q1 18 min · Q2 15 min · Q3 12 min (comme en vrai)' }];
 const fmtClock = t => { t = Math.max(0, Math.ceil(t)); return Math.floor(t / 60) + ':' + String(t % 60).padStart(2, '0'); };
 const AI_LV = [{ n: 'Facile', off: 5 }, { n: 'Normal', off: 2.2 }, { n: 'Difficile', off: .9 }, { n: 'Légende', off: 0 }];
