@@ -454,6 +454,10 @@ table.std td.r, table.std th.r { text-align: right; }
 /* iPad : pas de zoom automatique (champ de texte, double tap, pincement) */
 html, body { touch-action: manipulation; -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
 input, select, textarea { font-size: max(16px, 1em) !important; }
+.stepper { display: flex; align-items: center; gap: 10px; }
+.stepper input[type=range] { width: min(260px, 40vw); accent-color: var(--red); }
+.stepper b { min-width: 2ch; text-align: center; font-size: 20px; }
+.stepper .btn { min-width: 44px; font-size: 22px; font-weight: 900; }
 </style>
 </head>
 <body>
@@ -6240,7 +6244,7 @@ function renderLobby() {
         ${cfg.ownerRole === 'duo' ? `<div><b>Toi : ${ic('helmet')} Pilote — ${esc((role === 'pilot' ? d : DRV[cfg.drv2]).name)}</b><br><span class="muted">Ton coéquipier : ${ic('helmet')} Pilote — ${esc((role === 'pilot' ? DRV[cfg.drv2] : d).name)}<br>Chacun a son ingénieur à la radio.</span></div>`
           : `<div><b>Toi : ${role === 'pilot' ? ic('helmet') + ' Pilote — ' + esc(d.name) : ic('head') + ' Ingénieur de course'}</b><br><span class="muted">Ton coéquipier : ${role === 'pilot' ? ic('head') + ' Ingénieur au mur des stands' : ic('helmet') + ' Pilote — ' + esc(d.name)}</span></div>`}
         <div><span class="tbar" style="--c:${t.color}"></span> ${esc(t.full)}</div>
-        <div>${def.flag} <b>${esc(gpName(def))}</b> · ${DISTS.find(x => x.k === cfg.dist).f(def.laps)} tours · ${cfg.cars || 22} voitures</div>
+        <div>${def.flag} <b>${esc(gpName(def))}</b> · ${DISTS.find(x => x.k === cfg.dist).f(def.laps)} tours · ${cfg.aic ?? 20} voiture${(cfg.aic ?? 20) > 1 ? 's' : ''} de l'ordinateur</div>
         ${m.owner ? `<label class="muted" for="l-gp">Changer de Grand Prix</label><select id="l-gp" class="btn" style="text-align:left">${TRACKS.map((x, i) => `<option value="${i}" ${i === cfg.gp ? 'selected' : ''}>${esc(gpName(x))}</option>`).join('')}</select>
           <div class="seg" id="l-dist">${DISTS.map(x => `<button data-v="${x.k}" class="${cfg.dist === x.k ? 'on' : ''}">${x.n}</button>`).join('')}</div>
           <button class="btn primary big" id="l-go" ${Net.partner ? '' : 'disabled'}>Lancer le week-end ${ic('right')}</button>`
@@ -6260,7 +6264,7 @@ function renderLobby() {
 function mpWeekend() {
   const cfg = Game.mp.cfg;
   Game.multi = true;
-  Game.wk = { quick: true, multi: true, gp: cfg.gp, role: 'pilot', team: cfg.team, drv: cfg.drv, dist: cfg.dist, ai: cfg.ai, assist: cfg.assist, cars: cfg.cars || 22, duo: cfg.ownerRole === 'duo', drv2: cfg.drv2 };
+  Game.wk = { quick: true, multi: true, gp: cfg.gp, role: 'pilot', team: cfg.team, drv: cfg.drv, dist: cfg.dist, ai: cfg.ai, assist: cfg.assist, aic: cfg.aic ?? 20, duo: cfg.ownerRole === 'duo', drv2: cfg.drv2 };
   if (!Game.mp.owner) Net.send('cfg', cfg);
   renderWeekend();
 }
@@ -6345,7 +6349,7 @@ const DISTS = [
   { k: '5', n: '5 tours', f: () => 5 }, { k: '15', n: '15 %', f: L => Math.max(5, Math.round(L * .15)) }, { k: '25', n: '25 %', f: L => Math.max(6, Math.round(L * .25)) },
   { k: '50', n: '50 %', f: L => Math.round(L * .5) }, { k: '100', n: '100 %', f: L => L },
 ];
-const APP_VER = '10 nov. · deux pilotes';
+const APP_VER = '10 nov. · 0 à 20 voitures IA';
 const QFMT = [{ k: 'court', n: 'Courtes', d: [360, 300, 240], h: 'Q1 6 min · Q2 5 min · Q3 4 min' }, { k: 'moyen', n: 'Moyennes', d: [600, 480, 360], h: 'Q1 10 min · Q2 8 min · Q3 6 min' }, { k: 'reel', n: 'Réelles', d: [1080, 900, 720], h: 'Q1 18 min · Q2 15 min · Q3 12 min (comme en vrai)' }];
 const fmtClock = t => { t = Math.max(0, Math.ceil(t)); return Math.floor(t / 60) + ':' + String(t % 60).padStart(2, '0'); };
 const AI_LV = [{ n: 'Facile', off: 5 }, { n: 'Normal', off: 2.2 }, { n: 'Difficile', off: .9 }, { n: 'Légende', off: 0 }];
@@ -6428,7 +6432,7 @@ function renderSetup(kind) {
       ${S.role === 'pilot' || S.role === 'duo' || kind === 'multi' ? `<div class="section"><h3>${S.role === 'pilot' || S.role === 'duo' ? 'Ton pilote' + (S.role === 'duo' ? ' (ton ami prend l\'autre)' : '') : 'Le pilote (ton ami)'}</h3><div class="drvpick">${t.drivers.map((d, i) => `<button class="rolecard ${i === S.drvIdx ? 'on' : ''}" data-drv="${i}"><b>${flagSVG(d.nat)} ${esc(d.name)}</b><span>#${d.n} · ${esc(t.name)}</span></button>`).join('')}</div></div>` : ''}
       ${kind !== 'career' ? `<div class="section"><h3>Grand Prix</h3><div class="gpgrid">${TRACKS.map((d, i) => `<button class="gpbtn ${i === S.gp ? 'on' : ''}" data-gp="${i}"><b>${flagSVG(d.flag)} ${esc(d.gp)}</b><small>${esc(d.city)} · ${(d.len / 1000).toFixed(3).replace('.', ',')} km</small></button>`).join('')}</div></div>` : ''}
       <div class="section"><h3>Options</h3><div class="card opts">
-        ${kind !== 'career' ? `<div class="opt"><label>Nombre de voitures</label><div class="seg" id="o-cars">${[4, 6, 10, 14, 18, 22].map(x => `<button data-v="${x}" class="${(S.cars || 22) === x ? 'on' : ''}">${x}</button>`).join('')}</div></div>` : ''}
+        ${kind !== 'career' ? `<div class="opt"><label>Voitures de l'ordinateur <small class="muted" id="o-aic-t">(${aicTxt(S)})</small></label><div class="stepper" id="o-aic"><button class="btn small" data-d="-1" aria-label="Moins">−</button><input type="range" min="0" max="20" step="1" value="${S.aic ?? 20}" aria-label="Nombre de voitures de l'ordinateur"><b class="num">${S.aic ?? 20}</b><button class="btn small" data-d="1" aria-label="Plus">+</button></div></div>` : ''}
         <div class="opt"><label>Durée des courses</label><div class="seg" id="o-dist">${DISTS.map(x => `<button data-v="${x.k}" class="${S.dist === x.k ? 'on' : ''}">${x.n}</button>`).join('')}</div></div>
         ${S.role === 'pilot' || S.role === 'duo' || kind === 'multi' ? `<div class="opt"><label>Niveau des adversaires</label><div class="seg" id="o-ai">${AI_LV.map((x, i) => `<button data-v="${i}" class="${S.ai === i ? 'on' : ''}">${x.n}</button>`).join('')}</div></div>
         <div class="opt"><label>Aides au pilotage</label><div class="seg" id="o-as">${ASSISTS.map((x, i) => `<button data-v="${i}" class="${S.assist === i ? 'on' : ''}" title="${x.d}">${x.n}</button>`).join('')}</div></div>` : ''}
@@ -6444,16 +6448,23 @@ function renderSetup(kind) {
     $$('[data-team]', el).forEach(b => b.onclick = () => { S.team = b.dataset.team; S.drvIdx = 0; draw(); });
     $$('[data-drv]', el).forEach(b => b.onclick = () => { S.drvIdx = +b.dataset.drv; draw(); });
     $$('[data-gp]', el).forEach(b => b.onclick = () => { S.gp = +b.dataset.gp; draw(); });
-    const segs = { 'o-cars': v => S.cars = +v, 'o-dist': v => S.dist = v, 'o-ai': v => S.ai = +v, 'o-as': v => S.assist = +v, 'o-voice': v => p.voice = v === '1', 'o-oth': v => p.others = v === '1', 'o-q': v => p.quality = +v, 'o-iai': v => p.ai = v === '1' };
+    // nombre exact de voitures de l'ordinateur (0 à 20)
+    const st = $('#o-aic');
+    if (st) {
+      const rg = $('input', st), out = $('b', st), set = v => { S.aic = clamp(Math.round(v), 0, 20); rg.value = S.aic; out.textContent = S.aic; $('#o-aic-t').textContent = '(' + aicTxt(S) + ')'; };
+      rg.oninput = () => set(+rg.value);
+      $$('button', st).forEach(b => b.onclick = () => set((S.aic ?? 20) + +b.dataset.d));
+    }
+    const segs = { 'o-dist': v => S.dist = v, 'o-ai': v => S.ai = +v, 'o-as': v => S.assist = +v, 'o-voice': v => p.voice = v === '1', 'o-oth': v => p.others = v === '1', 'o-q': v => p.quality = +v, 'o-iai': v => p.ai = v === '1' };
     for (const id in segs) { const g = $('#' + id); if (g) $$('button', g).forEach(b => b.onclick = () => { segs[id](b.dataset.v); Store.savePrefs(p); draw(); }); }
     $('#s-go').onclick = () => {
       const tm = TEAM[S.team];
-      if (kind === 'multi') return createLobby({ ownerRole: S.role === 'duo' ? 'duo' : S.role === 'pilot' ? 'pilot' : 'engineer', team: S.team, drv: tm.drivers[S.drvIdx].code, drv2: tm.drivers[1 - S.drvIdx].code, gp: S.gp, dist: S.dist, ai: S.ai, assist: S.assist, cars: S.cars || 22 });
+      if (kind === 'multi') return createLobby({ ownerRole: S.role === 'duo' ? 'duo' : S.role === 'pilot' ? 'pilot' : 'engineer', team: S.team, drv: tm.drivers[S.drvIdx].code, drv2: tm.drivers[1 - S.drvIdx].code, gp: S.gp, dist: S.dist, ai: S.ai, assist: S.assist, aic: S.aic ?? 20 });
       if (kind === 'career') {
         Game.save = { v: 1, role: S.role, team: S.team, drv: tm.drivers[S.drvIdx].code, round: 0, dist: S.dist, ai: S.ai, assist: S.assist, pts: {}, tpts: {}, results: [], dev: {}, budget: 6, upg: { aero: 0, engine: 0, rel: 0, pit: 0 } };
         Store.save(Game.save); renderHub();
       } else {
-        Game.wk = { quick: true, gp: S.gp, role: S.role === 'duo' ? 'pilot' : S.role, team: S.team, drv: tm.drivers[S.drvIdx].code, dist: S.dist, ai: S.ai, assist: S.assist, cars: S.cars || 22 };
+        Game.wk = { quick: true, gp: S.gp, role: S.role === 'duo' ? 'pilot' : S.role, team: S.team, drv: tm.drivers[S.drvIdx].code, dist: S.dist, ai: S.ai, assist: S.assist, aic: S.aic ?? 20 };
         renderWeekend();
       }
     };
@@ -6511,15 +6522,17 @@ function makeWeather(T, laps) {
 }
 // plateau : les pilotes du joueur (et de son coéquipier humain) + des adversaires répartis du plus rapide au plus lent
 function fieldOf(wk) {
-  const n = clamp(wk.cars || 22, 2, ALL_DRIVERS.length);
-  if (n >= ALL_DRIVERS.length) return ALL_DRIVERS.slice();
   const must = new Set(wk.role === 'manager' ? TEAM[wk.team].drivers.map(d => d.code) : [wk.drv, wk.drv2].filter(Boolean));
+  const n = clamp(must.size + (wk.aic ?? 20), must.size, ALL_DRIVERS.length);
+  if (n >= ALL_DRIVERS.length) return ALL_DRIVERS.slice();
   const others = ALL_DRIVERS.filter(d => !must.has(d.code)).sort((a, b) => (a.team.gapEff + a.sk) - (b.team.gapEff + b.sk));
   const k = Math.max(0, n - must.size), pick = [];
   for (let i = 0; i < k; i++) pick.push(others[Math.round(k === 1 ? 0 : i * (others.length - 1) / (k - 1))]);
   const set = new Set([...must, ...pick.map(d => d.code)]);
   return ALL_DRIVERS.filter(d => set.has(d.code));
 }
+// texte d'aide : total sur la grille
+function aicTxt(S) { const own = S.role === 'manager' || S.role === 'duo' ? 2 : 1, n = Math.min(22, own + (S.aic ?? 20)); return `${n} voiture${n > 1 ? 's' : ''} sur la grille`; }
 function simQuali(T, wk, playerTime) {
   const w = wk.weather.segs.some(s => s.from < 0) ? wk.weather.segs[0].r : 0;
   const ideal = idealFor(w) || 'S';
