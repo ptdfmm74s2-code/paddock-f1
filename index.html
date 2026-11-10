@@ -2,7 +2,7 @@
 <html lang="fr">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover, user-scalable=no">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Paddock F1">
@@ -451,6 +451,9 @@ table.std td.r, table.std th.r { text-align: right; }
 .tbtn.lbk { right: calc(max(12px, env(safe-area-inset-right)) + clamp(76px, 13vw, 150px) + 10px + (clamp(76px, 13vw, 150px) - 52px) / 2); bottom: calc(max(12px, env(safe-area-inset-bottom)) + clamp(90px, 30vh, 220px) + 14px); width: 52px; height: 52px; border-radius: 50%; font-size: 7.5px; letter-spacing: .03em; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; background: rgba(16,20,27,.8); border-color: rgba(255,255,255,.35); }
 .tbtn.lbk .ic { width: 18px; height: 18px; transform: scaleX(-1); }
 .tbtn.lbk.on { background: #fff; color: #111; }
+/* iPad : pas de zoom automatique (champ de texte, double tap, pincement) */
+html, body { touch-action: manipulation; -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+input, select, textarea { font-size: max(16px, 1em) !important; }
 </style>
 </head>
 <body>
@@ -1027,7 +1030,7 @@ class Race {
     this.nextInc = this.t + T.T0 * rand(2.5, 6);
     // environ 1 à 2 incidents par course en moyenne, plus rares sur les courses très courtes
     if (Math.random() > clamp(.32 * this.realLaps / Math.max(this.laps, 1) * .2 + .15, .15, .42)) return;
-    const pool = this.cars.filter(c => !c.dnf && !c.fin && !c.pit && !c.isPlayer && c.v > 30);
+    const pool = this.cars.filter(c => !c.dnf && !c.fin && !c.pit && !c.isPlayer && !c.net && c.v > 30);
     if (!pool.length) return;
     const c = pick(pool), roll = Math.random(), sec = this.sectorOf(c.ti || 0), turn = 1 + Math.floor(Math.random() * 16);
     if (roll < .45) { // accident
@@ -1252,7 +1255,8 @@ class Race {
       c.paceT -= dt;
       if (c.paceT <= 0) { c.pace = this.paceOf(c); c.paceT = 0.5; }
       if (c.dnf) { this.dnfStep(c, dt); continue; }
-      if (c.isPlayer && c.manual) this.playerStep(c, dt, inp || { thr: 0, brk: 0, steer: 0 });
+      if (c.net && c.manual) this.netStep(c, dt);
+      else if (c.isPlayer && c.manual) this.playerStep(c, dt, inp || { thr: 0, brk: 0, steer: 0 });
       else this.aiStep(c, dt, act, n);
       this.common(c, dt);
     }
@@ -1433,7 +1437,8 @@ class Race {
     const nearEntry = u < 150 || u > L - 60;
     const latV = (lat - (c.prevLat ?? lat)) / Math.max(dt, 1e-3); c.prevLat = lat; c.latV = latV;
     const drivesIn = (u < 140 || u > L - 60) && ((lat * T.pitSide > T.hw + .6) || (lat * T.pitSide > T.hw - 1.2 && latV * T.pitSide > 1.2));
-    if (this.phase === 'race' && (c.pitReq || drivesIn) && nearEntry && c.dist > 0 && !c.fin && c.lastPitLap !== c.lapsDone && !c.pit) {
+    if (this.netGuest) { if (this.phase === 'race' && drivesIn && nearEntry && !c.pitReq && !c.pit) { c.pitReq = true; c.pitComp = c.pitComp || this.autoComp(c); } }
+    else if (this.phase === 'race' && (c.pitReq || drivesIn) && nearEntry && c.dist > 0 && !c.fin && c.lastPitLap !== c.lapsDone && !c.pit) {
       if (this.q) this.qualiBox(c);
       if (!c.pitReq) { c.pitReq = true; c.pitComp = c.pitComp || this.autoComp(c); }
       c.manual = false; c.autoPit = true; c.dVel = 0; c.pu = u;
@@ -1512,6 +1517,29 @@ class Race {
     }
     const lv = d => d >= 50 ? 2 : d >= 18 ? 1 : 0;
     if (lv(c.dmg) > lv(before)) this.ev.push({ k: 'damage', c, lv: lv(c.dmg), kind, other });
+  }
+  // voiture du 2e pilote (course à deux) : sa position arrive par le réseau, la course la place et compte ses tours
+  netStep(c, dt) {
+    const T = this.T, L = T.L, I = c.netIn;
+    if (this.phase !== 'race' || !I) { c.v = 0; this.placeAI(c); return; }
+    const age = Math.min(.25, (performance.now() - I.at) / 1000);
+    c.x = I.x + Math.sin(I.h) * I.v * age; c.z = I.z + Math.cos(I.h) * I.v * age; c.h = I.h; c.v = I.v;
+    c.thr = I.thr; c.brk = I.brk; c.steer = I.st;
+    const i = c.ti = nearestIdx(T, c.x, c.z, c.ti || 0, 12);
+    const dx = c.x - T.px[i], dz = c.z - T.pz[i], lat = dx * T.nx[i] + dz * T.nz[i], al = dx * T.tx[i] + dz * T.tz[i];
+    const s = mod(i * T.ds + al, L);
+    if (c.ps === undefined) c.ps = s;
+    let diff = s - c.ps; if (diff < -L / 2) diff += L; if (diff > L / 2) diff -= L;
+    c.dist += diff; c.dist = Math.round((c.dist - s) / L) * L + s; c.ps = s; c.d = lat; c.y = T.py[i];
+    const u = mod(s - (L - T.pitIn), L);
+    if (c.pitReq && (u < 140 || u > L - 60) && c.dist > 0 && !c.fin && c.lastPitLap !== c.lapsDone && !c.pit) {
+      c.manual = false; c.autoPit = true; c.dVel = 0; c.pu = u;
+      if (u > L - 60) c.dist += (L - u) + 1;
+      this.enterPit(c); this.ev.push({ k: 'autopit', c }); return;
+    }
+    c.pu = u;
+    if (Math.abs(lat) > T.hw + 1.4) c.secOffF = true;
+    c.pace = this.paceOf(c);
   }
   playerCollide(c) {
     for (const o of this.cars) {
@@ -1633,14 +1661,14 @@ class Race {
     const mism = ideal ? !isWetTyre(c.comp) || (ideal === 'W' && c.comp === 'I' && this.w > .85) : isWetTyre(c.comp) && this.w < .14;
     const mine = c.team === this.myTeam;
     if (c.pitReq || left < 1) return;
-    if ((this.rc.flag === 'sc' || this.rc.vsc) && !c.isPlayer && !(mine && this.role === 'manager') && c.wear > 28 && left > 3 && !idealFor(this.w)) { c.pitReq = true; c.pitComp = this.autoComp(c); return; }
+    if ((this.rc.flag === 'sc' || this.rc.vsc) && !c.isPlayer && !c.net && !(mine && this.role === 'manager') && c.wear > 28 && left > 3 && !idealFor(this.w)) { c.pitReq = true; c.pitComp = this.autoComp(c); return; }
     if (mine && this.role === 'manager') { // le pilote ne rentre seul qu'en cas d'urgence
       if (c.wear > 86 && left > 1) { c.pitReq = true; this.ev.push({ k: 'selfpit', c, why: 'wear' }); }
       else if (mism && (c.mism = (c.mism || 0) + 1) >= 2 && left > 1) { c.pitReq = true; c.pitComp = ideal || 'M'; this.ev.push({ k: 'selfpit', c, why: 'weather' }); }
       else if (!mism) c.mism = 0;
       return;
     }
-    if (c.isPlayer) return; // le pilote joueur gère avec son ingénieur
+    if (c.isPlayer || c.net) return; // les pilotes humains gèrent avec leur ingénieur
     if (mism) { if (Math.random() < .7 && left > 1) { c.pitReq = true; c.pitComp = ideal || this.autoComp(c); } return; }
     const onlyDry = [...c.used].every(x => !isWetTyre(x)), usedDry = new Set([...c.used].filter(x => !isWetTyre(x)));
     if (!ideal && c.wear >= c.wTh && left > 2) { c.pitReq = true; c.pitComp = this.autoComp(c); return; }
@@ -4933,7 +4961,7 @@ const Brain = {
   init(race, role) { this.race = race; this.role = role; this.cool = {}; this.nextOther = rand(25, 45); this.flags = new Map(); this.secT = 0; },
   can(key, s) { const t = this.race.t; if ((this.cool[key] ?? -1e9) > t) return false; this.cool[key] = t + s; return true; },
   once(c, key) { const k = c.code + key + c.stops; if (this.flags.get(k)) return false; this.flags.set(k, 1); return true; },
-  eng(car, text, o = {}) { if (Game.multi && car && car.isPlayer && !o.sys) return; Radio.push({ who: 'eng', car, text, ...o }); },
+  eng(car, text, o = {}) { if (Game.multi && !Game.duo && car && car.isPlayer && !o.sys) return; Radio.push({ who: 'eng', car, text, ...o }); },
   drv(car, text, o = {}) { Radio.push({ who: 'drv', car, text, ...o }); },
   later(fn, s = .45) { setTimeout(fn, s * 1000); },
   mine(c) { const r = this.race; return c && c.team === r.myTeam && (this.role === 'manager' || c.isPlayer || Game.multi); },
@@ -5035,7 +5063,7 @@ const Brain = {
   pilotSays(text) {
     const r = this.race, c = r.cars.find(x => x.isPlayer);
     Radio.push({ who: 'me', car: c, text, speak: false });
-    if (Game.multi) return; // l'ingénieur humain entend et lit le message
+    if (Game.multi && !Game.duo) return; // l'ingénieur humain entend et lit le message
     if (r.q && QBrain.cmd(text, c, true)) return;
     if (AI.ok() && !c.fin) { AI.engineer(c, text).then(res => { if (!res) return this.rulePilot(text, c); this.applyActs(c, res); this.eng(c, res.reply); }); return; }
     this.rulePilot(text, c);
@@ -5202,10 +5230,10 @@ const Brain = {
       if (!this.mine(c) || c.dnf || c.fin) continue;
       const left = r.laps - c.lapsDone;
       if (pilot && c.isPlayer) {
-        if (!Game.multi && c.bat < 12 && c.ers !== 'harvest' && this.can('lowbat', 40)) this.eng(c, `Batterie à ${Math.round(c.bat)} %. Passe en mode recharge un tour, sinon tu vas manquer de puissance.`);
-        if (!Game.multi && c.ers === 'harvest' && c.bat > 95 && this.can('fullbat', 40)) this.eng(c, 'Batterie pleine, repasse en mode normal ou boost.');
-        if (!Game.multi && c.ovtAvail && c.ers !== 'ovt' && c.bat > 20 && this.can('ovtmsg', 25)) { const g = this.gaps(c); if (g.a) this.eng(c, `Overtake disponible sur ${g.a.drv.last} ! Appuie sur OVERTAKE.`, { q: 1 }); }
-        if (!Game.multi && !c.pitReq && !c.pit && left > 1 && c.lapsDone >= 1) {
+        if (!(Game.multi && !Game.duo) && c.bat < 12 && c.ers !== 'harvest' && this.can('lowbat', 40)) this.eng(c, `Batterie à ${Math.round(c.bat)} %. Passe en mode recharge un tour, sinon tu vas manquer de puissance.`);
+        if (!(Game.multi && !Game.duo) && c.ers === 'harvest' && c.bat > 95 && this.can('fullbat', 40)) this.eng(c, 'Batterie pleine, repasse en mode normal ou boost.');
+        if (!(Game.multi && !Game.duo) && c.ovtAvail && c.ers !== 'ovt' && c.bat > 20 && this.can('ovtmsg', 25)) { const g = this.gaps(c); if (g.a) this.eng(c, `Overtake disponible sur ${g.a.drv.last} ! Appuie sur OVERTAKE.`, { q: 1 }); }
+        if (!(Game.multi && !Game.duo) && !c.pitReq && !c.pit && left > 1 && c.lapsDone >= 1) {
           const ideal = idealFor(r.w);
           const usedDry = new Set([...c.used].filter(x => !isWetTyre(x)));
           let why = null;
@@ -5235,7 +5263,7 @@ const Brain = {
       const mineCars = r.cars.filter(c => this.mine(c) && !c.dnf && !c.fin);
       const c = pick(mineCars.length ? mineCars : [null]);
       if (c) {
-        if (pilot && c.isPlayer) { if (!Game.multi) { const t = Talk.engChat(c); if (t) this.eng(c, t); } }
+        if (pilot && c.isPlayer) { if (!(Game.multi && !Game.duo)) { const t = Talk.engChat(c); if (t) this.eng(c, t); } }
         else { const t = Talk.drvChat(c); if (t) this.drv(c, t); }
       }
     }
@@ -5890,7 +5918,7 @@ const Comm = {
    pair-à-pair (PeerJS) quand le fichier est hébergé ailleurs.
    ===================================================================== */
 function loadScript(src) { return new Promise((res, rej) => { const s = document.createElement('script'); s.src = src; s.onload = res; s.onerror = () => rej(new Error('load')); document.head.appendChild(s); }); }
-const NET_TOPICS = ['hello', 'cfg', 'go', 'start', 'p', 's', 'radio', 'say', 'ans', 'end', 'bye', 'flag'];
+const NET_TOPICS = ['hello', 'cfg', 'go', 'start', 'p', 's', 'radio', 'say', 'ans', 'end', 'bye', 'flag', 'g', 'cmd2', 'ev'];
 const Net = {
   kind: null, code: null, owner: false, h: {}, partner: false, room: null, mq: null, bc: null,
   set(t, fn) { this.h[t] = fn; },
@@ -5985,9 +6013,9 @@ const Host = {
   tP: 0, tS: 0,
   begin() {
     const r = Game.race, wk = Game.wk;
-    this.payload = { gp: wk.gp, team: wk.team, drv: wk.drv, laps: r.laps, realLaps: r.realLaps, ws: r.wearScale, weather: wk.weather, grid: r.cars.map(c => c.code), comp: Object.fromEntries(r.cars.map(c => [c.code, c.comp])), twoComp: r.twoComp };
+    this.payload = { duo: !!wk.duo, drv2: wk.drv2, assist: wk.assist, gp: wk.gp, team: wk.team, drv: wk.drv, laps: r.laps, realLaps: r.realLaps, ws: r.wearScale, weather: wk.weather, grid: r.cars.map(c => c.code), comp: Object.fromEntries(r.cars.map(c => [c.code, c.comp])), twoComp: r.twoComp };
     Net.send('start', this.payload);
-    Radio.onPush = m => { if (!m.fromNet) Net.send('radio', serMsg(m)); };
+    Radio.onPush = wk.duo ? null : m => { if (!m.fromNet) Net.send('radio', serMsg(m)); }; // deux pilotes : chacun sa radio
     Net.set('hello', () => { Net.send('cfg', Game.mp.cfg); Net.send('start', this.payload); });
     Net.set('say', d => {
       const car = Game.race.cars.find(c => c.code === d.code); if (!car) return;
@@ -5995,8 +6023,24 @@ const Host = {
       if (car.isPlayer) Brain.humanOrder(d.text, car); else Brain.handleManager(d.text, car);
     });
     Net.set('flag', d => { if (Game.race && d && d.k) Game.race.setFlag(d.k, d.o || {}); });
+    // course à deux pilotes : position de la 2e voiture, et ses demandes (box, pneus, mode moteur, ERS)
+    Net.set('g', d => { const c = this.car2(); if (c && d) c.netIn = { x: d[0] / 100, z: d[1] / 100, h: d[2] / 1000, v: d[3] / 10, thr: d[4] / 100, brk: d[5] / 100, st: d[6] / 100, at: performance.now() }; });
+    Net.set('cmd2', d => { const c = this.car2(), r = Game.race; if (!c || !d) return; c.pitReq = !!d.pr; c.pitComp = d.pc || null; if (d.m && MODES.includes(d.m)) c.mode = d.m; if (d.e && d.e !== c.ers && r.setERS) r.setERS(c, d.e); });
     Net.set('ans', d => { const car = Game.race.cars.find(c => c.code === d.code); if (car && car.ask) { Radio.push({ who: 'eng', car, text: car.ask.opts[d.k]?.say || '', lbl: 'Ton ingénieur', fromNet: true, speak: false }); Brain.answerAsk(car, d.k); } });
     this.tP = this.tS = 0;
+  },
+  car2() { const r = Game.race; return r && Game.wk && Game.wk.duo ? r.cars.find(c => c.code === Game.wk.drv2) : null; },
+  // événements de course envoyés à la tablette du 2e pilote (son ingénieur réagit comme le tien)
+  fwd(evs) {
+    if (!Game.wk || !Game.wk.duo || !evs.length) return;
+    const keep = /^(lap|pitstop|pitin|pitout|autopit|sector|fastest|rcflag|incident|rain|dry|flag|finish|go|restart|gain|lose|contact|damage|dnf|recov|done|crash|formend|formstart|ers)$/;
+    const out = [];
+    for (const ev of evs) {
+      if (!keep.test(ev.k)) continue;
+      const o = {}; for (const k in ev) { const v = ev[k]; if (v && typeof v === 'object' && v.code && v.drv) o[k] = { __c: v.code }; else if (v == null || typeof v !== 'object') o[k] = v; }
+      out.push(o);
+    }
+    if (out.length) Net.send('ev', out);
   },
   tick(now) {
     const r = Game.race; if (!r) return;
@@ -6009,6 +6053,7 @@ const Host = {
         pl: me ? [R1(me.x), R1(me.z), R3(me.h), Math.round((me.steer || 0) * 100), me.manual ? 1 : 0] : null,
         tm: team.map(c => [Math.round(c.thr * 100), Math.round(c.brk * 100), c.gear, Math.round(c.rpm / 10), Math.round(c.bat)]),
         sc: r.rc.sc ? [R1(r.rc.sc.dist), R1(r.rc.sc.v)] : null, md: r.rc.med ? [R1(r.rc.med.dist), R1(r.rc.med.v)] : null,
+        m2: (() => { const c = this.car2(); return c ? (c.manual && !c.pit ? 1 : 0) : null; })(), gt: r.goT ? R3(r.goT) : 0,
       });
     }
     if (now - this.tS > 1000) {
@@ -6037,7 +6082,7 @@ const Mirror = {
     });
     r.cars = P.grid.map((code, gp) => {
       const d = DRV[code], comp = P.comp[code] || 'M';
-      return { drv: d, team: d.team, code, gp, pos: gp + 1, dist: -(7 + gp * 8), d: 0, v: 0, comp, wear: 0, age: 0, stops: 0, used: new Set([comp]), mode: 'normal', pitReq: false, pitComp: null, pit: null, fin: false, dnf: false, lapsDone: 0, lastLap: 0, bestLap: Infinity, gap: 0, temps: [90, 90, 90, 90], bat: 100, thr: 0, brk: 0, gear: 1, rpm: 0, fuel: 70, trace: new Float32Array(T.N), x: 0, z: 0, y: 0, h: 0, ti: 0, isPlayer: code === P.drv, manual: code === P.drv, steer: 0, nb: [], hold: false, wTh: 65, noise: 0, pace: 1, slide: 0 };
+      return { drv: d, team: d.team, code, gp, pos: gp + 1, dist: -(7 + gp * 8), d: 0, v: 0, comp, dmg: 0, ers: 'normal', rv: 0, wear: 0, age: 0, stops: 0, used: new Set([comp]), mode: 'normal', pitReq: false, pitComp: null, pit: null, fin: false, dnf: false, lapsDone: 0, lastLap: 0, bestLap: Infinity, gap: 0, temps: [90, 90, 90, 90], bat: 100, thr: 0, brk: 0, gear: 1, rpm: 0, fuel: 70, trace: new Float32Array(T.N), x: 0, z: 0, y: 0, h: 0, ti: 0, isPlayer: code === (P.me || P.drv), manual: code === (P.me || P.drv), steer: 0, nb: [], hold: false, wTh: 65, noise: 0, pace: 1, slide: 0 };
     });
     r.order = r.cars.slice();
     r.cars.forEach(c => { c.d = (c.gp % 2 ? -1 : 1) * Math.min(2.4, T.hw - 2); const p = trackPoint(T, c.dist, c.d, {}); Object.assign(c, { x: p.x, z: p.z, y: p.y, h: p.h, ti: p.i }); });
@@ -6049,15 +6094,16 @@ const Mirror = {
     P.c.forEach((a, k) => { const c = r.cars[k]; if (!c) return; c.nb.push({ t: ts, dist: a[0] / 10, d: a[1] / 10, v: a[2] / 10 }); if (c.nb.length > 6) c.nb.shift(); });
     for (const [key, a] of [['sc', P.sc], ['med', P.md]]) { if (a) { r.rc[key] = r.rc[key] || { kind: key }; r.rc[key].dist = a[0] / 10; r.rc[key].v = a[1] / 10; } else r.rc[key] = null; }
     const me = r.cars.find(c => c.isPlayer);
-    if (P.pl && me) { const b = me.nb[me.nb.length - 1]; if (b) { b.x = P.pl[0] / 10; b.z = P.pl[1] / 10; b.h = P.pl[2] / 1000; } me.steer = P.pl[3] / 100; me.manual = !!P.pl[4]; }
-    r.cars.filter(c => c.team === r.myTeam).forEach((c, k) => { const a = P.tm[k]; if (a) { c.thr = a[0] / 100; c.brk = a[1] / 100; c.gear = a[2]; c.rpm = a[3] * 10; c.bat = a[4]; } });
+    if (r.netGuest) { if (P.gt) r.goT = P.gt / 1000; if (P.m2 != null && me) guestControl(r, me, !!P.m2); }
+    else if (P.pl && me) { const b = me.nb[me.nb.length - 1]; if (b) { b.x = P.pl[0] / 10; b.z = P.pl[1] / 10; b.h = P.pl[2] / 1000; } me.steer = P.pl[3] / 100; me.manual = !!P.pl[4]; }
+    r.cars.filter(c => c.team === r.myTeam).forEach((c, k) => { const a = P.tm[k]; if (a && !c.local) { c.thr = a[0] / 100; c.brk = a[1] / 100; c.gear = a[2]; c.rpm = a[3] * 10; c.bat = a[4]; } });
   },
   applyS(r, S) {
     S.c.forEach((a, k) => {
       const c = r.cars[k]; if (!c) return;
       c.comp = CK[a[0]] || c.comp; c.wear = a[1] / 10; c.age = a[2]; c.stops = a[3]; c.gap = a[4] / 1000;
-      c.pit = a[5] & 1 ? (c.pit || {}) : null; c.pitReq = !!(a[5] & 2); c.fin = !!(a[5] & 4); c.dnf = !!(a[5] & 8); c.hold = !!(a[5] & 32);
-      c.pitComp = a[6] >= 0 ? CK[a[6]] : null; c.mode = MODES[a[7]] || 'normal'; c.lapsDone = a[8]; c.lastLap = a[9] / 1000; c.bestLap = a[10] ? a[10] / 1000 : Infinity;
+      c.pit = a[5] & 1 ? (c.pit || {}) : null; if (!(r.netGuest && c.isPlayer) || (a[5] & 1)) c.pitReq = !!(a[5] & 2); c.fin = !!(a[5] & 4); c.dnf = !!(a[5] & 8); c.hold = !!(a[5] & 32);
+      if (!(r.netGuest && c.isPlayer)) { c.pitComp = a[6] >= 0 ? CK[a[6]] : null; c.mode = MODES[a[7]] || 'normal'; } c.lapsDone = a[8]; c.lastLap = a[9] / 1000; c.bestLap = a[10] ? a[10] / 1000 : Infinity;
       c.used = new Set(String(a[11]).split('').map(i => CK[+i]).filter(Boolean)); c.temps = a[12]; c.fuel = a[13] / 10; c.pos = a[14];
     });
     r.order = r.cars.slice().sort((a, b) => a.pos - b.pos);
@@ -6073,6 +6119,7 @@ const Mirror = {
   step(r) {
     const now = performance.now() - (Net.kind === 'mqtt' ? 330 : 220), T = r.T;
     for (const c of r.cars) {
+      if (c.local) continue; // voiture pilotée sur cette tablette
       const nb = c.nb; if (!nb.length) continue;
       let a = nb[0], b = nb[nb.length - 1], f = 1;
       for (let k = 0; k < nb.length - 1; k++) if (nb[k].t <= now && nb[k + 1].t >= now) { a = nb[k]; b = nb[k + 1]; f = (now - a.t) / (b.t - a.t || 1); break; }
@@ -6143,7 +6190,7 @@ async function createLobby(cfg) {
   wireLobby();
   renderLobby();
 }
-function myRole() { const m = Game.mp; return !m.cfg ? null : (m.owner ? m.cfg.ownerRole : (m.cfg.ownerRole === 'pilot' ? 'engineer' : 'pilot')); }
+function myRole() { const m = Game.mp; if (!m.cfg) return null; if (m.cfg.ownerRole === 'duo') return m.owner ? 'pilot' : 'pilot2'; return m.owner ? m.cfg.ownerRole : (m.cfg.ownerRole === 'pilot' ? 'engineer' : 'pilot'); }
 function wireLobby() {
   Net.set('__partner', v => {
     if (Game.raf && Game.multi) toast(v ? 'Ton coéquipier est reconnecté.' : 'Ton coéquipier s\'est déconnecté.', 4000);
@@ -6152,12 +6199,13 @@ function wireLobby() {
   });
   Net.set('hello', () => { if (Game.mp && Game.mp.owner) Net.send('cfg', Game.mp.cfg); Net.setPartner(true); });
   Net.set('cfg', cfg => { if (Game.mp && !Game.mp.owner) { Game.mp.cfg = cfg; Net.setPartner(true); if ($('#scr-setup').classList.contains('on')) renderLobby(); } });
-  Net.set('go', () => { if (myRole() === 'pilot') mpWeekend(); });
-  Net.set('start', P => { if (myRole() === 'engineer' && (!Game.raf || !Game.remote)) startRemote(P); });
+  Net.set('go', () => { if (myRole() === 'pilot') mpWeekend(); else if (myRole() === 'pilot2') mpWaiting(); });
+  Net.set('start', P => { if (myRole() === 'engineer' && (!Game.raf || !Game.remote)) startRemote(P); else if (myRole() === 'pilot2' && (!Game.raf || !Game.remote)) startRemoteDriver(P); });
+  Net.set('ev', list => { if (!Game.duoGuest || !Game.race || !Array.isArray(list)) return; const r = Game.race, car = code => r.cars.find(c => c.code === code); for (const o of list) { const ev = {}; for (const k in o) ev[k] = o[k] && o[k].__c ? car(o[k].__c) : o[k]; if (ev.k === 'go') r.goT = r.t; try { Brain.handle(ev); } catch (e) { } } });
   Net.set('p', d => { if (Game.remote && Game.race) Mirror.applyP(Game.race, d); });
   Net.set('s', d => { if (Game.remote && Game.race) Mirror.applyS(Game.race, d); });
   Net.set('radio', m => {
-    if (!Game.remote || !Game.race) return;
+    if (!Game.remote || !Game.race || Game.duoGuest) return;
     const car = Game.race.cars.find(c => c.code === m.code);
     let who = m.who, vr = m.vr, lbl = m.lbl, speak = m.speak;
     if (who === 'me') { who = 'drv'; vr = 'drv'; lbl = car ? car.drv.last + ' (pilote)' : 'Pilote'; speak = true; }
@@ -6189,9 +6237,10 @@ function renderLobby() {
       </div>
       <div class="card" style="display:grid;gap:10px;align-content:start">
         <div class="kicker">Rôles</div>
-        <div><b>Toi : ${role === 'pilot' ? ic('helmet') + ' Pilote — ' + esc(d.name) : ic('head') + ' Ingénieur de course'}</b><br><span class="muted">Ton coéquipier : ${role === 'pilot' ? ic('head') + ' Ingénieur au mur des stands' : ic('helmet') + ' Pilote — ' + esc(d.name)}</span></div>
+        ${cfg.ownerRole === 'duo' ? `<div><b>Toi : ${ic('helmet')} Pilote — ${esc((role === 'pilot' ? d : DRV[cfg.drv2]).name)}</b><br><span class="muted">Ton coéquipier : ${ic('helmet')} Pilote — ${esc((role === 'pilot' ? DRV[cfg.drv2] : d).name)}<br>Chacun a son ingénieur à la radio.</span></div>`
+          : `<div><b>Toi : ${role === 'pilot' ? ic('helmet') + ' Pilote — ' + esc(d.name) : ic('head') + ' Ingénieur de course'}</b><br><span class="muted">Ton coéquipier : ${role === 'pilot' ? ic('head') + ' Ingénieur au mur des stands' : ic('helmet') + ' Pilote — ' + esc(d.name)}</span></div>`}
         <div><span class="tbar" style="--c:${t.color}"></span> ${esc(t.full)}</div>
-        <div>${def.flag} <b>${esc(gpName(def))}</b> · ${DISTS.find(x => x.k === cfg.dist).f(def.laps)} tours</div>
+        <div>${def.flag} <b>${esc(gpName(def))}</b> · ${DISTS.find(x => x.k === cfg.dist).f(def.laps)} tours · ${cfg.cars || 22} voitures</div>
         ${m.owner ? `<label class="muted" for="l-gp">Changer de Grand Prix</label><select id="l-gp" class="btn" style="text-align:left">${TRACKS.map((x, i) => `<option value="${i}" ${i === cfg.gp ? 'selected' : ''}>${esc(gpName(x))}</option>`).join('')}</select>
           <div class="seg" id="l-dist">${DISTS.map(x => `<button data-v="${x.k}" class="${cfg.dist === x.k ? 'on' : ''}">${x.n}</button>`).join('')}</div>
           <button class="btn primary big" id="l-go" ${Net.partner ? '' : 'disabled'}>Lancer le week-end ${ic('right')}</button>`
@@ -6204,20 +6253,21 @@ function renderLobby() {
   if (m.owner) {
     $('#l-gp').onchange = e => { cfg.gp = +e.target.value; Net.send('cfg', cfg); renderLobby(); };
     $$('#l-dist button').forEach(b => b.onclick = () => { cfg.dist = b.dataset.v; Net.send('cfg', cfg); renderLobby(); });
-    $('#l-go').onclick = () => { Net.send('cfg', cfg); if (role === 'pilot') mpWeekend(); else { Net.send('go', {}); mpWaiting(); } };
+    $('#l-go').onclick = () => { Net.send('cfg', cfg); if (role === 'pilot') { if (cfg.ownerRole === 'duo') Net.send('go', {}); mpWeekend(); } else { Net.send('go', {}); mpWaiting(); } };
   }
   show('scr-setup');
 }
 function mpWeekend() {
   const cfg = Game.mp.cfg;
   Game.multi = true;
-  Game.wk = { quick: true, multi: true, gp: cfg.gp, role: 'pilot', team: cfg.team, drv: cfg.drv, dist: cfg.dist, ai: cfg.ai, assist: cfg.assist };
+  Game.wk = { quick: true, multi: true, gp: cfg.gp, role: 'pilot', team: cfg.team, drv: cfg.drv, dist: cfg.dist, ai: cfg.ai, assist: cfg.assist, cars: cfg.cars || 22, duo: cfg.ownerRole === 'duo', drv2: cfg.drv2 };
   if (!Game.mp.owner) Net.send('cfg', cfg);
   renderWeekend();
 }
 function mpWaiting() {
   Game.multi = true;
-  $('#scr-setup').innerHTML = `<div class="wrap"><div class="topbar"><button class="btn small" id="w-back">${ic('left')} Salon</button><h2>Le pilote se prépare…</h2></div><div class="card"><p>Ton pilote règle sa voiture (qualifications, pneus de départ). Tu arriveras au mur des stands au moment du départ.</p><p class="muted">Astuce : touche l'écran une fois pour autoriser le son.</p></div></div>`;
+  const duo = Game.mp && Game.mp.cfg && Game.mp.cfg.ownerRole === 'duo';
+  $('#scr-setup').innerHTML = `<div class="wrap"><div class="topbar"><button class="btn small" id="w-back">${ic('left')} Salon</button><h2>${duo ? 'Ton coéquipier prépare le week-end…' : 'Le pilote se prépare…'}</h2></div><div class="card"><p>${duo ? 'Ton coéquipier règle les qualifications et les pneus de départ. Tu arriveras dans ta voiture sur la grille au moment du départ.' : 'Ton pilote règle sa voiture (qualifications, pneus de départ). Tu arriveras au mur des stands au moment du départ.'}</p><p class="muted">Astuce : touche l'écran une fois pour autoriser le son.</p></div></div>`;
   $('#w-back').onclick = renderLobby;
   show('scr-setup');
 }
@@ -6237,6 +6287,49 @@ function startRemote(P) {
   cancelAnimationFrame(Game.raf); Game.raf = requestAnimationFrame(frame);
   toast('Tu es au mur des stands. Parle (bouton micro) ou écris à ton pilote.', 4000);
 }
+// course à deux pilotes : la tablette du 2e pilote pilote sa voiture elle-même
+function startRemoteDriver(P) {
+  Sfx.init();
+  Game.multi = true; Game.remote = true; Game.host = false; Game.duo = true; Game.duoGuest = true;
+  Game.role = 'pilot'; Game.team = TEAM[P.team]; Game.drv = DRV[P.drv2]; Game.session = 'race';
+  Game.wk = { quick: true, multi: true, duo: true, gp: P.gp, role: 'pilot', team: P.team, drv: P.drv2, weather: P.weather, laps: P.laps, assist: P.assist ?? 1 };
+  stopRace();
+  const r = Game.race = Mirror.create({ ...P, me: P.drv2 });
+  r.role = 'pilot'; r.netGuest = true; r.assist = P.assist ?? 1; r.myDrv = DRV[P.drv2]; r.dmgLv = 0; r.w = 0; r.rain = 0;
+  r.cars.forEach(c => { c.manual = false; c.used = c.used || new Set([c.comp]); c.paceT = 0; c.pace = 1; c.mode = 'normal'; c.ers = 'normal'; c.bat = 100; });
+  Game.world = new World(r, Game.prefs.quality);
+  Radio.reset(); Radio.role = 'pilot'; Radio.prefs = Game.prefs; Radio.onPush = null; Comm.reset();
+  Brain.init(r, 'pilot');
+  Game.speed = 1; Game.paused = false; Game.ending = false; Game.secAcc = 0; Game.pilotView = Game.pilotView || 0;
+  buildCockpit();
+  Game.last = performance.now();
+  cancelAnimationFrame(Game.raf); Game.raf = requestAnimationFrame(frame);
+  toast('Tu es dans ta voiture sur la grille. Attends l\'extinction des feux !', 4000);
+}
+// la voiture du 2e pilote : pilotée ici (à soi), ou par l'ordinateur de l'hôte (entrée/sortie des stands)
+function guestControl(r, me, mine) {
+  if (mine && !me.local) {
+    // on reprend la main là où la voiture se trouve
+    Mirror.step(r); me.local = true; me.manual = true; me.rv = 0; me.ps = mod(me.dist, r.T.L); me.prevLat = me.d; me.stF = 0;
+    const p = trackPoint(r.T, me.dist, me.d, {}); me.x = p.x; me.z = p.z; me.h = p.h; me.ti = p.i;
+  } else if (!mine && me.local) { me.local = false; me.manual = false; }
+}
+// à chaque image sur la tablette du 2e pilote : physique locale de sa voiture, envoi de sa position et de ses demandes
+function guestStep(r, rdt) {
+  const me = r.cars.find(c => c.isPlayer); if (!me) return;
+  if (me.local) {
+    const inp = Input.read(rdt), n = Math.max(1, Math.ceil(rdt / (1 / 60))), h = rdt / n;
+    for (let k = 0; k < n; k++) { r.playerStep(me, h, inp); r.playerCollide(me); }
+    for (const ev of r.ev) try { Brain.handle(ev); } catch (e) { }
+    r.ev.length = 0;
+    me.gear = me.v < .5 ? 1 : Math.min(8, 1 + Math.floor(me.v / 10)); me.rpm = me.v < .5 ? 5000 + inp.thr * 5000 : 6000 + 6000 * ((me.v % 10) / 10);
+    const now = performance.now();
+    if (now - (Game.g2t || 0) > 66) { Game.g2t = now; Net.send('g', [Math.round(me.x * 100), Math.round(me.z * 100), Math.round(me.h * 1000), Math.round(me.v * 10), Math.round((me.thr || 0) * 100), Math.round((me.brk || 0) * 100), Math.round((me.steer || 0) * 100)]); }
+  }
+  // demandes au stand / mode moteur / ERS : envoyées dès qu'elles changent (et rappelées toutes les 2 s)
+  const cmd = { pr: me.pitReq ? 1 : 0, pc: me.pitComp || null, m: me.mode, e: me.ers }, key = JSON.stringify(cmd), now = performance.now();
+  if (key !== Game.cmd2k || now - (Game.cmd2t || 0) > 2000) { Game.cmd2k = key; Game.cmd2t = now; Net.send('cmd2', cmd); }
+}
 function remoteResults(d) {
   const r = Game.race; if (!r) return;
   const fa = d.fa ? { c: r.cars.find(c => c.code === d.fa[0]), t: d.fa[1] } : { c: null, t: 0 };
@@ -6252,7 +6345,7 @@ const DISTS = [
   { k: '5', n: '5 tours', f: () => 5 }, { k: '15', n: '15 %', f: L => Math.max(5, Math.round(L * .15)) }, { k: '25', n: '25 %', f: L => Math.max(6, Math.round(L * .25)) },
   { k: '50', n: '50 %', f: L => Math.round(L * .5) }, { k: '100', n: '100 %', f: L => L },
 ];
-const APP_VER = '10 nov. · multijoueur réparé';
+const APP_VER = '10 nov. · deux pilotes';
 const QFMT = [{ k: 'court', n: 'Courtes', d: [360, 300, 240], h: 'Q1 6 min · Q2 5 min · Q3 4 min' }, { k: 'moyen', n: 'Moyennes', d: [600, 480, 360], h: 'Q1 10 min · Q2 8 min · Q3 6 min' }, { k: 'reel', n: 'Réelles', d: [1080, 900, 720], h: 'Q1 18 min · Q2 15 min · Q3 12 min (comme en vrai)' }];
 const fmtClock = t => { t = Math.max(0, Math.ceil(t)); return Math.floor(t / 60) + ':' + String(t % 60).padStart(2, '0'); };
 const AI_LV = [{ n: 'Facile', off: 5 }, { n: 'Normal', off: 2.2 }, { n: 'Difficile', off: .9 }, { n: 'Légende', off: 0 }];
@@ -6329,13 +6422,15 @@ function renderSetup(kind) {
       <div class="section"><h3>Ton rôle</h3><div class="rolecards">
         <button class="rolecard ${S.role === 'manager' ? 'on' : ''}" data-role="manager"><b>${ic('head')} ${kind === 'multi' ? 'Je suis l\'ingénieur' : 'Manager / Ingénieur'}</b><span>Au mur des stands : plusieurs écrans (caméras au choix, pneus, carte, télémétrie, météo), stratégie et radio en voix ou par écrit avec tes deux pilotes.</span></button>
         <button class="rolecard ${S.role === 'pilot' ? 'on' : ''}" data-role="pilot"><b>${ic('helmet')} ${kind === 'multi' ? 'Je suis le pilote' : 'Pilote'}</b><span>Au volant : vue cockpit, T-cam, poursuite, TV ou hélico. Tu parles à ton ingénieur uniquement à la voix.</span></button>
+        ${kind === 'multi' ? `<button class="rolecard ${S.role === 'duo' ? 'on' : ''}" data-role="duo"><b>${ic('helmet')}${ic('helmet')} Deux pilotes</b><span>Vous pilotez tous les deux, coéquipiers dans la même écurie. Chacun a son ingénieur à la radio (l'IA).</span></button>` : ''}
       </div></div>
       <div class="section"><h3>Écurie</h3><div class="teamgrid">${TEAMS.map(tm => `<button class="teamcard ${tm.id === S.team ? 'on' : ''}" style="--c:${tm.color}" data-team="${tm.id}"><b>${esc(tm.name)}</b><small>${esc(tm.full)}<br>${tm.drivers.map(d => flagSVG(d.nat) + ' ' + esc(d.last) + ' #' + d.n).join(' · ')}<br>Moteur ${esc(tm.engine)}</small></button>`).join('')}</div></div>
-      ${S.role === 'pilot' || kind === 'multi' ? `<div class="section"><h3>${S.role === 'pilot' ? 'Ton pilote' : 'Le pilote (ton ami)'}</h3><div class="drvpick">${t.drivers.map((d, i) => `<button class="rolecard ${i === S.drvIdx ? 'on' : ''}" data-drv="${i}"><b>${flagSVG(d.nat)} ${esc(d.name)}</b><span>#${d.n} · ${esc(t.name)}</span></button>`).join('')}</div></div>` : ''}
+      ${S.role === 'pilot' || S.role === 'duo' || kind === 'multi' ? `<div class="section"><h3>${S.role === 'pilot' || S.role === 'duo' ? 'Ton pilote' + (S.role === 'duo' ? ' (ton ami prend l\'autre)' : '') : 'Le pilote (ton ami)'}</h3><div class="drvpick">${t.drivers.map((d, i) => `<button class="rolecard ${i === S.drvIdx ? 'on' : ''}" data-drv="${i}"><b>${flagSVG(d.nat)} ${esc(d.name)}</b><span>#${d.n} · ${esc(t.name)}</span></button>`).join('')}</div></div>` : ''}
       ${kind !== 'career' ? `<div class="section"><h3>Grand Prix</h3><div class="gpgrid">${TRACKS.map((d, i) => `<button class="gpbtn ${i === S.gp ? 'on' : ''}" data-gp="${i}"><b>${flagSVG(d.flag)} ${esc(d.gp)}</b><small>${esc(d.city)} · ${(d.len / 1000).toFixed(3).replace('.', ',')} km</small></button>`).join('')}</div></div>` : ''}
       <div class="section"><h3>Options</h3><div class="card opts">
+        ${kind !== 'career' ? `<div class="opt"><label>Nombre de voitures</label><div class="seg" id="o-cars">${[4, 6, 10, 14, 18, 22].map(x => `<button data-v="${x}" class="${(S.cars || 22) === x ? 'on' : ''}">${x}</button>`).join('')}</div></div>` : ''}
         <div class="opt"><label>Durée des courses</label><div class="seg" id="o-dist">${DISTS.map(x => `<button data-v="${x.k}" class="${S.dist === x.k ? 'on' : ''}">${x.n}</button>`).join('')}</div></div>
-        ${S.role === 'pilot' || kind === 'multi' ? `<div class="opt"><label>Niveau des adversaires</label><div class="seg" id="o-ai">${AI_LV.map((x, i) => `<button data-v="${i}" class="${S.ai === i ? 'on' : ''}">${x.n}</button>`).join('')}</div></div>
+        ${S.role === 'pilot' || S.role === 'duo' || kind === 'multi' ? `<div class="opt"><label>Niveau des adversaires</label><div class="seg" id="o-ai">${AI_LV.map((x, i) => `<button data-v="${i}" class="${S.ai === i ? 'on' : ''}">${x.n}</button>`).join('')}</div></div>
         <div class="opt"><label>Aides au pilotage</label><div class="seg" id="o-as">${ASSISTS.map((x, i) => `<button data-v="${i}" class="${S.assist === i ? 'on' : ''}" title="${x.d}">${x.n}</button>`).join('')}</div></div>` : ''}
         <div class="opt"><label>Voix à la radio</label><div class="seg" id="o-voice"><button data-v="1" class="${p.voice ? 'on' : ''}">Activées</button><button data-v="0" class="${!p.voice ? 'on' : ''}">Texte seul</button></div></div>
         <div class="opt"><label>Qualité graphique</label><div class="seg" id="o-q">${['Basse', 'Moyenne', 'Haute', 'Ultra'].map((x, i) => `<button data-v="${i}" class="${p.quality === i ? 'on' : ''}">${x}</button>`).join('')}</div></div>
@@ -6349,16 +6444,16 @@ function renderSetup(kind) {
     $$('[data-team]', el).forEach(b => b.onclick = () => { S.team = b.dataset.team; S.drvIdx = 0; draw(); });
     $$('[data-drv]', el).forEach(b => b.onclick = () => { S.drvIdx = +b.dataset.drv; draw(); });
     $$('[data-gp]', el).forEach(b => b.onclick = () => { S.gp = +b.dataset.gp; draw(); });
-    const segs = { 'o-dist': v => S.dist = v, 'o-ai': v => S.ai = +v, 'o-as': v => S.assist = +v, 'o-voice': v => p.voice = v === '1', 'o-oth': v => p.others = v === '1', 'o-q': v => p.quality = +v, 'o-iai': v => p.ai = v === '1' };
+    const segs = { 'o-cars': v => S.cars = +v, 'o-dist': v => S.dist = v, 'o-ai': v => S.ai = +v, 'o-as': v => S.assist = +v, 'o-voice': v => p.voice = v === '1', 'o-oth': v => p.others = v === '1', 'o-q': v => p.quality = +v, 'o-iai': v => p.ai = v === '1' };
     for (const id in segs) { const g = $('#' + id); if (g) $$('button', g).forEach(b => b.onclick = () => { segs[id](b.dataset.v); Store.savePrefs(p); draw(); }); }
     $('#s-go').onclick = () => {
       const tm = TEAM[S.team];
-      if (kind === 'multi') return createLobby({ ownerRole: S.role === 'pilot' ? 'pilot' : 'engineer', team: S.team, drv: tm.drivers[S.drvIdx].code, gp: S.gp, dist: S.dist, ai: S.ai, assist: S.assist });
+      if (kind === 'multi') return createLobby({ ownerRole: S.role === 'duo' ? 'duo' : S.role === 'pilot' ? 'pilot' : 'engineer', team: S.team, drv: tm.drivers[S.drvIdx].code, drv2: tm.drivers[1 - S.drvIdx].code, gp: S.gp, dist: S.dist, ai: S.ai, assist: S.assist, cars: S.cars || 22 });
       if (kind === 'career') {
         Game.save = { v: 1, role: S.role, team: S.team, drv: tm.drivers[S.drvIdx].code, round: 0, dist: S.dist, ai: S.ai, assist: S.assist, pts: {}, tpts: {}, results: [], dev: {}, budget: 6, upg: { aero: 0, engine: 0, rel: 0, pit: 0 } };
         Store.save(Game.save); renderHub();
       } else {
-        Game.wk = { quick: true, gp: S.gp, role: S.role, team: S.team, drv: tm.drivers[S.drvIdx].code, dist: S.dist, ai: S.ai, assist: S.assist };
+        Game.wk = { quick: true, gp: S.gp, role: S.role === 'duo' ? 'pilot' : S.role, team: S.team, drv: tm.drivers[S.drvIdx].code, dist: S.dist, ai: S.ai, assist: S.assist, cars: S.cars || 22 };
         renderWeekend();
       }
     };
@@ -6414,11 +6509,22 @@ function makeWeather(T, laps) {
   }
   return { segs };
 }
+// plateau : les pilotes du joueur (et de son coéquipier humain) + des adversaires répartis du plus rapide au plus lent
+function fieldOf(wk) {
+  const n = clamp(wk.cars || 22, 2, ALL_DRIVERS.length);
+  if (n >= ALL_DRIVERS.length) return ALL_DRIVERS.slice();
+  const must = new Set(wk.role === 'manager' ? TEAM[wk.team].drivers.map(d => d.code) : [wk.drv, wk.drv2].filter(Boolean));
+  const others = ALL_DRIVERS.filter(d => !must.has(d.code)).sort((a, b) => (a.team.gapEff + a.sk) - (b.team.gapEff + b.sk));
+  const k = Math.max(0, n - must.size), pick = [];
+  for (let i = 0; i < k; i++) pick.push(others[Math.round(k === 1 ? 0 : i * (others.length - 1) / (k - 1))]);
+  const set = new Set([...must, ...pick.map(d => d.code)]);
+  return ALL_DRIVERS.filter(d => set.has(d.code));
+}
 function simQuali(T, wk, playerTime) {
   const w = wk.weather.segs.some(s => s.from < 0) ? wk.weather.segs[0].r : 0;
   const ideal = idealFor(w) || 'S';
   const aiOff = wk.role === 'pilot' ? AI_LV[wk.ai].off : 0;
-  return ALL_DRIVERS.map(d => {
+  return fieldOf(wk).map(d => {
     let t = T.T0 + d.team.gapEff + d.sk + tyrePen(ideal, w) + w * 6 + 8 * .03 + rand(-.05, .35);
     if (wk.role === 'pilot') { if (d.code === wk.drv) t = playerTime ?? Infinity; else t += aiOff; }
     return { d, t };
@@ -6429,7 +6535,7 @@ function renderWeekend() {
   setTeamVars(team); applyDev();
   wk.laps = wk.laps || DISTS.find(x => x.k === wk.dist).f(def.laps);
   wk.weather = wk.weather || makeWeather(T, wk.laps);
-  const mine = wk.role === 'manager' ? team.drivers : [DRV[wk.drv]];
+  const mine = wk.role === 'manager' ? team.drivers : wk.duo ? [DRV[wk.drv], DRV[wk.drv2]] : [DRV[wk.drv]];
   wk.comp = wk.comp || {};
   const wetStart = wk.weather.segs.some(s => s.from < 0);
   mine.forEach(d => { if (!wk.comp[d.code] || (wetStart !== isWetTyre(wk.comp[d.code]))) wk.comp[d.code] = wetStart ? (wk.weather.segs[0].r > .72 ? 'W' : 'I') : 'M'; });
@@ -6486,7 +6592,7 @@ function startSessionNow(session) {
   const wk = Game.wk, T = getTrack(wk.gp), def = TRACKS[wk.gp], team = TEAM[wk.team];
   Sfx.init(); Speech.prime(); applyDev();
   Game.role = wk.role; Game.team = team; Game.drv = wk.role === 'pilot' ? DRV[wk.drv] : null; Game.session = session;
-  const grid = session === 'quali' ? ALL_DRIVERS.slice() : wk.grid.map(g => g.d);
+  const grid = session === 'quali' ? fieldOf(wk) : wk.grid.map(g => g.d);
   const s = Game.save;
   Game.race = new Race({
     T, laps: session === 'quali' ? 999 : wk.laps, realLaps: def.laps, role: wk.role, team, drv: Game.drv, session,
@@ -6498,7 +6604,8 @@ function startSessionNow(session) {
   if (Game.world) Game.world.dispose();
   Game.world = new World(Game.race, Game.prefs.quality);
   Radio.reset(); Radio.role = wk.role; Radio.prefs = Game.prefs; Radio.onPush = null; Comm.reset();
-  Game.multi = !!wk.multi; Game.host = Game.multi; Game.remote = false;
+  Game.multi = !!wk.multi; Game.host = Game.multi; Game.remote = false; Game.duo = !!wk.duo; Game.duoGuest = false;
+  if (wk.duo && session === 'race') { const c2 = Game.race.cars.find(c => c.code === wk.drv2); if (c2) { c2.net = true; c2.manual = true; } }
   Brain.init(Game.race, wk.role);
   Game.speed = 1; Game.paused = false; Game.ending = false; Game.secAcc = 0; Game.pilotView = Game.pilotView || 0;
   if (wk.role === 'manager') buildWall(); else buildCockpit();
@@ -6970,11 +7077,12 @@ function requestBox(k) {
   const r = Game.race, me = r.cars.find(c => c.isPlayer); if (!me) return;
   if (r.q) { if (r.qualiBox(me)) Brain.eng(me, 'Compris, on rentre au garage. Tour de retour, garde les pneus.'); return; }
   if (r.session !== 'race') return;
-  if (me.pitReq && !k) { me.pitReq = false; me.pitComp = null; Game.multi ? Radio.push({ who: 'me', car: me, text: 'J\'annule le box, je reste dehors.', speak: false }) : Brain.eng(me, 'Box annulé, on reste dehors.'); }
-  else { me.pitReq = true; me.pitComp = k || me.pitComp || r.autoComp(me); Game.multi ? Radio.push({ who: 'me', car: me, text: `Je rentre ce tour, je veux des ${PL[me.pitComp]}.`, speak: false }) : Brain.eng(me, `Box confirmé, ce tour. On met des ${PL[me.pitComp]}.`); }
+  if (me.pitReq && !k) { me.pitReq = false; me.pitComp = null; Game.multi && !Game.duo ? Radio.push({ who: 'me', car: me, text: 'J\'annule le box, je reste dehors.', speak: false }) : Brain.eng(me, 'Box annulé, on reste dehors.'); }
+  else { me.pitReq = true; me.pitComp = k || me.pitComp || r.autoComp(me); Game.multi && !Game.duo ? Radio.push({ who: 'me', car: me, text: `Je rentre ce tour, je veux des ${PL[me.pitComp]}.`, speak: false }) : Brain.eng(me, `Box confirmé, ce tour. On met des ${PL[me.pitComp]}.`); }
 }
 function toggleAuto() {
   const r = Game.race, me = r.cars.find(c => c.isPlayer); if (!me || me.autoPit) return;
+  if (Game.duoGuest) return toast('Pilote automatique indisponible pour le 2e pilote', 1800);
   if (me.manual) { me.manual = false; me.dVel = 0; toast('Pilote automatique activé (P pour reprendre la main)'); }
   else { me.manual = true; me.ps = mod(me.dist, r.T.L); toast('À toi de piloter !'); }
   $('#ck-auto').classList.toggle('primary', !me.manual);
@@ -7194,19 +7302,26 @@ window.addEventListener('keydown', e => {
 window.addEventListener('keyup', e => { Input.keys[e.code] = false; if (e.code === 'KeyV' && Mic.gate) { Mic.stop(); $$('.ptt.live').forEach(b => b.classList.remove('live')); } });
 window.addEventListener('blur', () => { Input.keys = {}; });
 
+// iPad : empêcher le zoom par pincement / double tap, et remettre la page en place quand le clavier se ferme
+['gesturestart', 'gesturechange', 'gestureend'].forEach(t => document.addEventListener(t, e => e.preventDefault(), { passive: false }));
+document.addEventListener('touchmove', e => { if (e.touches && e.touches.length > 1) e.preventDefault(); }, { passive: false });
+document.addEventListener('focusout', e => { if (e.target.matches && e.target.matches('input, textarea, select')) setTimeout(() => { window.scrollTo(0, 0); document.body.scrollTop = 0; }, 60); });
+if (window.visualViewport) visualViewport.addEventListener('resize', () => { if (visualViewport.scale > 1.01 && !document.activeElement.matches('input, textarea, select')) window.scrollTo(0, 0); });
+
 /* ---------------- BOUCLE PRINCIPALE ---------------- */
 function frame(now) {
   Game.raf = requestAnimationFrame(frame);
   const r = Game.race, w = Game.world; if (!r || !w) return;
   const rdt = Math.min(.1, Math.max(0, (now - Game.last) / 1000)); Game.last = now;
   const pilot = Game.role === 'pilot', me = pilot ? r.cars.find(c => c.isPlayer) : null;
-  if (Game.remote) { Mirror.step(r); }
+  if (Game.remote) { Mirror.step(r); if (Game.duoGuest && !Game.paused) { guestStep(r, rdt); if (r.phase === 'race') { Game.secAcc += rdt; while (Game.secAcc >= 1) { Game.secAcc -= 1; Brain.tick(); } } } }
   else if (!Game.paused) {
     const inp = pilot ? Input.read(rdt) : null;
     const simDt = rdt * (pilot ? 1 : Game.speed);
     const steps = Math.min(48, Math.max(1, Math.ceil(simDt / (1 / 60)))), h = simDt / steps;
     for (let i = 0; i < steps; i++) r.update(h, inp);
     for (const ev of r.ev) Brain.handle(ev);
+    if (Game.host && Game.duo) Host.fwd(r.ev);
     r.ev.length = 0;
     if (r.phase === 'race') { Game.secAcc += simDt; while (Game.secAcc >= 1) { Game.secAcc -= 1; Brain.tick(); } }
     w.tvDirector(simDt, pilot ? [me] : r.cars.filter(c => c.team === Game.team));
