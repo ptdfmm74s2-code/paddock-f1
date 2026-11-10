@@ -1218,6 +1218,7 @@ class Race {
     const T = this.T, L = T.L;
     if (this.phase === 'formation') { this.formStep(dt, inp); return; }
     if (this.phase === 'grid') {
+      if (this.holdGrid) { this.cars.forEach(c => { c.rpm = 8000 + Math.random() * 1500; }); return; } // course à deux : on attend l'autre pilote
       this.lightT += dt;
       this.lights = Math.min(5, Math.floor(this.lightT - 0.6));
       if (this.lightT >= this.goAt) {
@@ -5922,7 +5923,7 @@ const Comm = {
    pair-à-pair (PeerJS) quand le fichier est hébergé ailleurs.
    ===================================================================== */
 function loadScript(src) { return new Promise((res, rej) => { const s = document.createElement('script'); s.src = src; s.onload = res; s.onerror = () => rej(new Error('load')); document.head.appendChild(s); }); }
-const NET_TOPICS = ['hello', 'cfg', 'go', 'start', 'p', 's', 'radio', 'say', 'ans', 'end', 'bye', 'flag', 'g', 'cmd2', 'ev'];
+const NET_TOPICS = ['hello', 'cfg', 'go', 'start', 'p', 's', 'radio', 'say', 'ans', 'end', 'bye', 'flag', 'g', 'cmd2', 'ev', 'rdy'];
 const Net = {
   kind: null, code: null, owner: false, h: {}, partner: false, room: null, mq: null, bc: null,
   set(t, fn) { this.h[t] = fn; },
@@ -6032,6 +6033,18 @@ const Host = {
     Net.set('cmd2', d => { const c = this.car2(), r = Game.race; if (!c || !d) return; c.pitReq = !!d.pr; c.pitComp = d.pc || null; if (d.m && MODES.includes(d.m)) c.mode = d.m; if (d.e && d.e !== c.ers && r.setERS) r.setERS(c, d.e); });
     Net.set('ans', d => { const car = Game.race.cars.find(c => c.code === d.code); if (car && car.ask) { Radio.push({ who: 'eng', car, text: car.ask.opts[d.k]?.say || '', lbl: 'Ton ingénieur', fromNet: true, speak: false }); Brain.answerAsk(car, d.k); } });
     this.tP = this.tS = 0;
+    if (wk.duo) {
+      r.holdGrid = true; this.rdy = false; const t0 = performance.now();
+      Net.set('rdy', () => { if (this.rdy) return; this.rdy = true; const rr = Game.race; if (rr) rr.holdGrid = false; toast('Ton coéquipier est sur la grille : départ !', 3000); });
+      clearInterval(this.startT);
+      this.startT = setInterval(() => {
+        const rr = Game.race;
+        if (this.rdy || !rr || rr !== r) return clearInterval(this.startT);
+        Net.send('start', this.payload);
+        if (performance.now() - t0 > 45000) { rr.holdGrid = false; clearInterval(this.startT); toast('Ton coéquipier ne répond pas : départ sans attendre.', 4000); }
+      }, 1500);
+      toast('En attente de ton coéquipier sur la grille…', 3000);
+    }
   },
   car2() { const r = Game.race; return r && Game.wk && Game.wk.duo ? r.cars.find(c => c.code === Game.wk.drv2) : null; },
   // événements de course envoyés à la tablette du 2e pilote (son ingénieur réagit comme le tien)
@@ -6204,7 +6217,7 @@ function wireLobby() {
   Net.set('hello', () => { if (Game.mp && Game.mp.owner) Net.send('cfg', Game.mp.cfg); Net.setPartner(true); });
   Net.set('cfg', cfg => { if (Game.mp && !Game.mp.owner) { Game.mp.cfg = cfg; Net.setPartner(true); if ($('#scr-setup').classList.contains('on')) renderLobby(); } });
   Net.set('go', () => { if (myRole() === 'pilot') mpWeekend(); else if (myRole() === 'pilot2') mpWaiting(); });
-  Net.set('start', P => { if (myRole() === 'engineer' && (!Game.raf || !Game.remote)) startRemote(P); else if (myRole() === 'pilot2' && (!Game.raf || !Game.remote)) startRemoteDriver(P); });
+  Net.set('start', P => { if (myRole() === 'engineer' && (!Game.raf || !Game.remote)) startRemote(P); else if (myRole() === 'pilot2') { if (!Game.raf || !Game.remote || !Game.duoGuest) startRemoteDriver(P); else Net.send('rdy', {}); } });
   Net.set('ev', list => { if (!Game.duoGuest || !Game.race || !Array.isArray(list)) return; const r = Game.race, car = code => r.cars.find(c => c.code === code); for (const o of list) { const ev = {}; for (const k in o) ev[k] = o[k] && o[k].__c ? car(o[k].__c) : o[k]; if (ev.k === 'go') r.goT = r.t; try { Brain.handle(ev); } catch (e) { } } });
   Net.set('p', d => { if (Game.remote && Game.race) Mirror.applyP(Game.race, d); });
   Net.set('s', d => { if (Game.remote && Game.race) Mirror.applyS(Game.race, d); });
@@ -6247,8 +6260,8 @@ function renderLobby() {
         <div>${def.flag} <b>${esc(gpName(def))}</b> · ${DISTS.find(x => x.k === cfg.dist).f(def.laps)} tours · ${cfg.aic ?? 20} voiture${(cfg.aic ?? 20) > 1 ? 's' : ''} de l'ordinateur</div>
         ${m.owner ? `<label class="muted" for="l-gp">Changer de Grand Prix</label><select id="l-gp" class="btn" style="text-align:left">${TRACKS.map((x, i) => `<option value="${i}" ${i === cfg.gp ? 'selected' : ''}>${esc(gpName(x))}</option>`).join('')}</select>
           <div class="seg" id="l-dist">${DISTS.map(x => `<button data-v="${x.k}" class="${cfg.dist === x.k ? 'on' : ''}">${x.n}</button>`).join('')}</div>
-          <button class="btn primary big" id="l-go" ${Net.partner ? '' : 'disabled'}>Lancer le week-end ${ic('right')}</button>`
-      : `<p class="muted" style="margin:0">Ton ami lance le week-end. ${role === 'engineer' ? 'Tu arriveras au mur des stands dès que le pilote prend le départ.' : ''}</p>`}
+          <button class="btn primary big" id="l-go" ${Net.partner ? '' : 'disabled'}>${cfg.ownerRole === 'duo' ? 'Lancer la course ensemble' : 'Lancer le week-end'} ${ic('right')}</button>`
+      : `<p class="muted" style="margin:0">${cfg.ownerRole === 'duo' ? 'Ton ami lance la course : vous arriverez tous les deux sur la même grille, au même moment.' : 'Ton ami lance le week-end. ' + (role === 'engineer' ? 'Tu arriveras au mur des stands dès que le pilote prend le départ.' : '')}</p>`}
       </div>
     </div></div>`;
   $('#l-quit').onclick = () => { Net.send('bye', {}); Net.close(); Game.mp = null; Game.multi = false; renderHome(); };
@@ -6267,6 +6280,12 @@ function mpWeekend() {
   Game.wk = { quick: true, multi: true, gp: cfg.gp, role: 'pilot', team: cfg.team, drv: cfg.drv, dist: cfg.dist, ai: cfg.ai, assist: cfg.assist, aic: cfg.aic ?? 20, duo: cfg.ownerRole === 'duo', drv2: cfg.drv2 };
   if (!Game.mp.owner) Net.send('cfg', cfg);
   renderWeekend();
+  if (Game.wk.duo) { // même circuit, même moment : grille établie tout de suite et départ pour les deux
+    const wk = Game.wk, T = getTrack(wk.gp);
+    wk.grid = simQuali(T, wk, undefined);
+    toast('Qualifications simulées. Direction la grille, tous les deux !', 2500);
+    startSession('race');
+  }
 }
 function mpWaiting() {
   Game.multi = true;
@@ -6309,6 +6328,8 @@ function startRemoteDriver(P) {
   Game.last = performance.now();
   cancelAnimationFrame(Game.raf); Game.raf = requestAnimationFrame(frame);
   toast('Tu es dans ta voiture sur la grille. Attends l\'extinction des feux !', 4000);
+  clearInterval(Game.rdyT); Net.send('rdy', {});
+  Game.rdyT = setInterval(() => { if (!Game.duoGuest || !Game.race || Game.race.phase !== 'grid') return clearInterval(Game.rdyT); Net.send('rdy', {}); }, 1500);
 }
 // la voiture du 2e pilote : pilotée ici (à soi), ou par l'ordinateur de l'hôte (entrée/sortie des stands)
 function guestControl(r, me, mine) {
@@ -6349,7 +6370,7 @@ const DISTS = [
   { k: '5', n: '5 tours', f: () => 5 }, { k: '15', n: '15 %', f: L => Math.max(5, Math.round(L * .15)) }, { k: '25', n: '25 %', f: L => Math.max(6, Math.round(L * .25)) },
   { k: '50', n: '50 %', f: L => Math.round(L * .5) }, { k: '100', n: '100 %', f: L => L },
 ];
-const APP_VER = '10 nov. · 0 à 20 voitures IA';
+const APP_VER = '10 nov. · course ensemble';
 const QFMT = [{ k: 'court', n: 'Courtes', d: [360, 300, 240], h: 'Q1 6 min · Q2 5 min · Q3 4 min' }, { k: 'moyen', n: 'Moyennes', d: [600, 480, 360], h: 'Q1 10 min · Q2 8 min · Q3 6 min' }, { k: 'reel', n: 'Réelles', d: [1080, 900, 720], h: 'Q1 18 min · Q2 15 min · Q3 12 min (comme en vrai)' }];
 const fmtClock = t => { t = Math.max(0, Math.ceil(t)); return Math.floor(t / 60) + ':' + String(t % 60).padStart(2, '0'); };
 const AI_LV = [{ n: 'Facile', off: 5 }, { n: 'Normal', off: 2.2 }, { n: 'Difficile', off: .9 }, { n: 'Légende', off: 0 }];
