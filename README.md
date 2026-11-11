@@ -15,3 +15,8 @@ Tracés des circuits : bacinger/f1-circuits (licence MIT, © Tomislav Bacinger).
 - Grue de dépannage : « crane machine » par **Abhijith Sajikumar** (Sketchfab, https://sketchfab.com/3d-models/crane-machine-ea2f7f1ed1f8470cbe01699e6714a55e), licence [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) — allégée (`crane.glb`), crochet et câbles animés ajoutés.
 - Mécaniciens : « Car Mechanic Girl 2 » par **tech.service.allwe** (Sketchfab, https://sketchfab.com/3d-models/car-mechanic-girl-2-2e9b3051b8914c11868a952436eff33a), licence [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) — allégé (`mech.glb`, `mech-lo.glb`), cheveux retirés, tenue aux couleurs des écuries, casque ajouté, animé.
 - Safety Car : « 2019 Mercedes-Benz AMG GTR Safety Car » par **OUTPISTON** (Sketchfab), licence [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/) — textures recompressées ; le fichier `sc.glb` reste sous cette licence (usage non commercial, partage dans les mêmes conditions).
+
+## Maintenance (accès réservé)
+Dans `maintenance.json`, mettre `"on": true` pour que seuls les appareils propriétaires puissent jouer
+(`"msg"` : texte affiché aux autres joueurs). Remettre `"on": false` pour rouvrir le jeu à tout le monde.
+Un appareil devient propriétaire avec le code, dans Réglages → « Cet appareil est à moi ».

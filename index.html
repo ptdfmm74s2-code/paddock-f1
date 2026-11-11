@@ -6362,6 +6362,78 @@ function remoteResults(d) {
   stopRace();
   renderResults(rows, { fastest: fa });
 }
+/* ---------------- ACCÈS RÉSERVÉ (MAINTENANCE) ----------------
+   Quand le fichier maintenance.json du site contient "on": true, seuls les appareils
+   déverrouillés avec le code propriétaire peuvent jouer. Les autres voient un écran d'attente. */
+const Lock = {
+  HASH: 'dd2eaadb1e09a6f7d2afafb1c704d7de2579821ef2ed17cd1f8e473d15850898',
+  on: false, msg: '',
+  owner() { try { return localStorage.getItem('pf1-owner') === this.HASH; } catch (e) { return false; } },
+  async hash(code) {
+    const k = await crypto.subtle.importKey('raw', new TextEncoder().encode(code), 'PBKDF2', false, ['deriveBits']);
+    const b = await crypto.subtle.deriveBits({ name: 'PBKDF2', hash: 'SHA-256', salt: new TextEncoder().encode('paddockf1-owner'), iterations: 200000 }, k, 256);
+    return [...new Uint8Array(b)].map(x => x.toString(16).padStart(2, '0')).join('');
+  },
+  async unlock(code) {
+    code = String(code || '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+    if (!code || !(window.crypto && crypto.subtle)) return false;
+    if (await this.hash(code) !== this.HASH) return false;
+    try { localStorage.setItem('pf1-owner', this.HASH); } catch (e) { }
+    return true;
+  },
+  forget() { try { localStorage.removeItem('pf1-owner'); } catch (e) { } this.apply(); },
+  async check() {
+    if (!/^https?:$/.test(location.protocol) || window.claude) return;
+    try {
+      const r = await fetch('maintenance.json?t=' + Date.now(), { cache: 'no-store' });
+      if (!r.ok) { this.on = false; return this.apply(); }
+      const j = await r.json();
+      this.on = !!j.on; this.msg = String(j.msg || '');
+    } catch (e) { return; } // hors ligne : on ne bloque pas
+    this.apply();
+  },
+  apply() {
+    const el = $('#lock-ov');
+    if (!this.on || this.owner()) { if (el) el.remove(); return; }
+    if (Game.raf) return; // on ne coupe pas une course en cours : l'écran viendra à la fin
+    if (el) return;
+    const d = document.createElement('div');
+    d.id = 'lock-ov';
+    d.style.cssText = 'position:fixed;inset:0;z-index:99999;background:#0b0d12;color:#fff;display:flex;align-items:center;justify-content:center;padding:24px;font-family:inherit;text-align:center';
+    d.innerHTML = `<div style="max-width:420px">
+      <div style="font-size:30px;font-weight:900;font-style:italic;margin-bottom:10px">Paddock F1</div>
+      <div style="font-size:20px;font-weight:800;margin-bottom:8px">Jeu en maintenance</div>
+      <p class="muted" style="margin:0 0 20px">${esc(this.msg || 'Une mise à jour est en cours. Reviens un peu plus tard !')}</p>
+      <button class="btn" id="lk-re">Réessayer</button>
+      <div style="margin-top:34px"><button class="btn small" id="lk-me" style="opacity:.55">Je suis le propriétaire</button></div>
+      <div id="lk-f" style="display:none;margin-top:12px;gap:8px;justify-content:center">
+        <input id="lk-c" class="btn" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="Code" style="width:150px;text-align:center;letter-spacing:2px">
+        <button class="btn primary" id="lk-ok">OK</button>
+      </div>
+      <p id="lk-e" style="color:var(--warn);min-height:1.2em;margin-top:8px"></p></div>`;
+    document.body.appendChild(d);
+    $('#lk-re').onclick = () => this.check();
+    $('#lk-me').onclick = () => { $('#lk-f').style.display = 'flex'; $('#lk-c').focus(); };
+    const go = async () => {
+      $('#lk-e').textContent = 'Vérification…';
+      if (await this.unlock($('#lk-c').value)) { toast('Appareil propriétaire : tu peux jouer.', 3000); this.apply(); }
+      else $('#lk-e').textContent = 'Code incorrect.';
+    };
+    $('#lk-ok').onclick = go;
+    $('#lk-c').onkeydown = e => { if (e.key === 'Enter') go(); };
+  },
+  start() {
+    this.check();
+    setInterval(() => this.check(), 60000);
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) this.check(); });
+  },
+  // réglages : déverrouiller cet appareil avant de lancer la maintenance
+  ask(done) {
+    const c = prompt('Code propriétaire :');
+    if (c == null) return;
+    this.unlock(c).then(ok => { toast(ok ? 'Cet appareil est maintenant le tien : il pourra jouer pendant la maintenance.' : 'Code incorrect.', 3500); if (done) done(); });
+  },
+};
 
 /* =====================================================================
    JEU — état, écrans, boucle
@@ -6370,7 +6442,7 @@ const DISTS = [
   { k: '5', n: '5 tours', f: () => 5 }, { k: '15', n: '15 %', f: L => Math.max(5, Math.round(L * .15)) }, { k: '25', n: '25 %', f: L => Math.max(6, Math.round(L * .25)) },
   { k: '50', n: '50 %', f: L => Math.round(L * .5) }, { k: '100', n: '100 %', f: L => L },
 ];
-const APP_VER = '10 nov. · course ensemble';
+const APP_VER = '11 nov. · accès réservé';
 const QFMT = [{ k: 'court', n: 'Courtes', d: [360, 300, 240], h: 'Q1 6 min · Q2 5 min · Q3 4 min' }, { k: 'moyen', n: 'Moyennes', d: [600, 480, 360], h: 'Q1 10 min · Q2 8 min · Q3 6 min' }, { k: 'reel', n: 'Réelles', d: [1080, 900, 720], h: 'Q1 18 min · Q2 15 min · Q3 12 min (comme en vrai)' }];
 const fmtClock = t => { t = Math.max(0, Math.ceil(t)); return Math.floor(t / 60) + ':' + String(t % 60).padStart(2, '0'); };
 const AI_LV = [{ n: 'Facile', off: 5 }, { n: 'Normal', off: 2.2 }, { n: 'Difficile', off: .9 }, { n: 'Légende', off: 0 }];
@@ -6649,7 +6721,7 @@ function startSessionNow(session) {
 }
 function stopRace() {
   if ($('#qbreak')) $('#qbreak').remove();
-  cancelAnimationFrame(Game.raf); Game.raf = 0; Sfx.engineOff(); Sfx.hiss(false); Speech.stop(); Mic.shutdown();
+  cancelAnimationFrame(Game.raf); Game.raf = 0; setTimeout(() => Lock.apply(), 0); Sfx.engineOff(); Sfx.hiss(false); Speech.stop(); Mic.shutdown();
   if (Game.world) { Game.world.dispose(); Game.world = null; }
   Radio.reset(); Radio.onPush = null;
 }
@@ -7209,6 +7281,7 @@ function settingsModal(onClose) {
         <div class="opt"><label>Décor</label><div class="seg" id="st-dc"><button data-v="kit" class="${p.decor !== 'classic' ? 'on' : ''}">Modèle importé</button><button data-v="classic" class="${p.decor === 'classic' ? 'on' : ''}">Classique</button></div></div>
         <p class="muted" style="font-size:13px;margin:0">Modèle importé : gradins couverts, murs grillagés, muret des stands, piles de pneus, arbres, lampadaires, panneaux, passerelle, tentes, tour et montgolfières (« Cartoon Race Track - Oval » de RCC Design, Sketchfab, CC BY 4.0), placés le long des vrais tracés. ${Kit.st === 'ready' ? 'Chargé.' : Kit.st === 'loading' ? 'Chargement…' : Kit.st === 'na' ? 'Disponible dans l\'appli installée (site).' : Kit.st === 'off' ? 'Qualité Moyenne ou plus.' : 'Échec du chargement.'}</p>
         <div class="opt"><label>Son des moteurs</label><div class="seg" id="st-s"><button data-v="1" class="${p.sound ? 'on' : ''}">Oui</button><button data-v="0" class="${!p.sound ? 'on' : ''}">Non</button></div></div>
+        <div class="opt"><label>Accès pendant la maintenance</label><div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">${Lock.owner() ? '<span style="color:var(--ok,#3c3);font-weight:800">Appareil propriétaire ✓</span><button class="btn small" id="st-own0">Oublier</button>' : '<button class="btn small" id="st-own">Cet appareil est à moi</button>'}</div></div>
         <div class="opt"><label>Dégâts sur les voitures</label><div class="seg" id="st-dmg">${[['0', 'Aucun'], ['1', 'Moyens'], ['2', 'Forts']].map(([v, l]) => `<button data-v="${v}" class="${String(p.damage == null ? 1 : p.damage) === v ? 'on' : ''}">${l}</button>`).join('')}</div></div>
         <div class="opt"><label>Incidents aléatoires</label><div class="seg" id="st-inc"><button data-v="1" class="${p.incidents !== false ? 'on' : ''}">Oui</button><button data-v="0" class="${p.incidents === false ? 'on' : ''}">Non</button></div></div>
         <p class="muted" style="font-size:13px;margin:0">Accidents, casses, crevaisons de temps en temps, avec safety car, VSC ou drapeau rouge décidés par la direction de course.</p>
@@ -7226,6 +7299,8 @@ function settingsModal(onClose) {
     seg('st-s', v => { p.sound = v === '1'; if (Game.raf) { Sfx.init(); p.sound ? Sfx.engineOn() : Sfx.engineOff(); } });
     seg('st-o', v => p.others = v === '1');
     seg('st-inc', v => p.incidents = v === '1');
+    if ($('#st-own')) $('#st-own').onclick = () => Lock.ask(draw);
+    if ($('#st-own0')) $('#st-own0').onclick = () => { Lock.forget(); draw(); };
     seg('st-dmg', v => { p.damage = +v; if (Game.race) Game.race.dmgLv = +v; });
     seg('st-ts', v => p.trackStyle = v);
     seg('st-dc', v => p.decor = v);
@@ -7424,6 +7499,7 @@ function engineAudio(r, w, dt) {
   if (Game.prefs.quality >= 1) { CarGLB.init(); Kit.init(); SafetyGLB.init(); WheelGLB.init(); CraneGLB.init(); MechGLB.init(); }
   document.addEventListener('pointerdown', () => Sfx.init(), { passive: true });
   renderHome();
+  Lock.start(); // accès réservé pendant la maintenance
   // mise à jour automatique : si une version plus récente est en ligne, on la charge (l'iPad garde sinon l'ancienne en mémoire)
   if (/^https?:$/.test(location.protocol) && !window.claude) {
     fetch(location.pathname + '?nocache=' + Date.now(), { cache: 'no-store' }).then(r => r.ok ? r.text() : '').then(t => {
