@@ -6363,48 +6363,109 @@ function remoteResults(d) {
   renderResults(rows, { fastest: fa });
 }
 /* ---------------- ACCÈS RÉSERVÉ (MAINTENANCE) ----------------
-   Quand le fichier maintenance.json du site contient "on": true, seuls les appareils
-   déverrouillés avec le code propriétaire peuvent jouer. Les autres voient un écran d'attente. */
+   Le propriétaire bloque / débloque le jeu depuis son iPad ou son téléphone (Réglages).
+   L'ordre est signé avec la clé du propriétaire (déverrouillée par son code) et diffusé par les
+   serveurs relais : les autres appareils vérifient la signature, personne d'autre ne peut l'imiter.
+   Secours : maintenance.json sur le site ("on": true bloque aussi). */
 const Lock = {
-  HASH: 'dd2eaadb1e09a6f7d2afafb1c704d7de2579821ef2ed17cd1f8e473d15850898',
-  on: false, msg: '',
-  owner() { try { return localStorage.getItem('pf1-owner') === this.HASH; } catch (e) { return false; } },
-  async hash(code) {
-    const k = await crypto.subtle.importKey('raw', new TextEncoder().encode(code), 'PBKDF2', false, ['deriveBits']);
-    const b = await crypto.subtle.deriveBits({ name: 'PBKDF2', hash: 'SHA-256', salt: new TextEncoder().encode('paddockf1-owner'), iterations: 200000 }, k, 256);
-    return [...new Uint8Array(b)].map(x => x.toString(16).padStart(2, '0')).join('');
-  },
+  PUB: {"kty": "EC", "crv": "P-256", "x": "unN7A7u2m6Zr8vlGCLJdYkfqUTMLaJmvsYgsk1OTPzQ", "y": "MkPILKBwvtZFJ4EVzLaglihLOkv2JMY2PvomGoxg3cw"},
+  ENC: { iv: 'Tx72GZoK+cNFg+aB', ct: 'rnQQ/r6B5n2XesNT1XIyzEMM8qk6IAzi09ljaIUkD40FS1bCAKJjBQvXPLVSl0OQoHvPG+9AeuGcNwheB9549kkMNKcCTFCo2o1cnZ7tfHJZlSvfwW0wXdYvxeI8Dbe40gizqf4XRZeT9njAubSX4MoCeXQ3ngoXIP0G3eiL95sKNoTq/uAtpwLfvcuXWhszSNE+xiPofVKseyhx/ib8dg9HPwsDrk4LC5mtH/U7cG0+1Xm+9OPmD2/7Onfm+kIWRB7WBRn7TQccVd5kS2uyfmocJSN6CZRtiw9QDjLL' },
+  TOPIC: 'paddockf1/lock/v1',
+  on: false, msg: '', jsonOn: false, jsonMsg: '', st: null, mqs: [],
+  owner() { try { return !!localStorage.getItem('pf1-own-k'); } catch (e) { return false; } },
+  b64(s) { return Uint8Array.from(atob(s), ch => ch.charCodeAt(0)); },
   async unlock(code) {
     code = String(code || '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
     if (!code || !(window.crypto && crypto.subtle)) return false;
-    if (await this.hash(code) !== this.HASH) return false;
-    try { localStorage.setItem('pf1-owner', this.HASH); } catch (e) { }
+    try {
+      const base = await crypto.subtle.importKey('raw', new TextEncoder().encode(code), 'PBKDF2', false, ['deriveKey']);
+      const aes = await crypto.subtle.deriveKey({ name: 'PBKDF2', hash: 'SHA-256', salt: new TextEncoder().encode('paddockf1-lock'), iterations: 200000 }, base, { name: 'AES-GCM', length: 256 }, false, ['decrypt']);
+      const pt = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: this.b64(this.ENC.iv) }, aes, this.b64(this.ENC.ct));
+      localStorage.setItem('pf1-own-k', new TextDecoder().decode(pt));
+      this.apply(); return true;
+    } catch (e) { return false; }
+  },
+  forget() { try { localStorage.removeItem('pf1-own-k'); } catch (e) { } this.apply(); },
+  async verify(m) {
+    try {
+      if (!m || typeof m.d !== 'string' || typeof m.sig !== 'string') return null;
+      const k = await crypto.subtle.importKey('jwk', this.PUB, { name: 'ECDSA', namedCurve: 'P-256' }, false, ['verify']);
+      const ok = await crypto.subtle.verify({ name: 'ECDSA', hash: 'SHA-256' }, k, this.b64(m.sig), new TextEncoder().encode(m.d));
+      if (!ok) return null;
+      const d = JSON.parse(m.d); return typeof d.ts === 'number' ? d : null;
+    } catch (e) { return null; }
+  },
+  // garde l'ordre signé le plus récent (un vieil ordre rejoué est ignoré)
+  async take(m, c) {
+    const d = await this.verify(m);
+    if (!d || (this.st && d.ts <= this.st.ts)) {
+      // l'appareil du propriétaire remet le bon ordre si quelqu'un l'a écrasé sur un serveur
+      if (c && this.owner() && this.stRaw && JSON.stringify(m) !== this.stRaw) c.publish(this.TOPIC, this.stRaw, { qos: 1, retain: true });
+      return;
+    }
+    this.stRaw = JSON.stringify(m);
+    this.st = d;
+    try { localStorage.setItem('pf1-lock', JSON.stringify(m)); } catch (e) { }
+    this.apply();
+  },
+  async set(on, msg) {
+    let k; try { k = await crypto.subtle.importKey('jwk', JSON.parse(localStorage.getItem('pf1-own-k')), { name: 'ECDSA', namedCurve: 'P-256' }, false, ['sign']); } catch (e) { toast('Clé propriétaire absente : retape ton code.', 3500); return false; }
+    const d = JSON.stringify({ on: !!on, msg: String(msg || '').slice(0, 140), ts: Math.max(Date.now(), (this.st ? this.st.ts : 0) + 1) });
+    const sig = new Uint8Array(await crypto.subtle.sign({ name: 'ECDSA', hash: 'SHA-256' }, k, new TextEncoder().encode(d)));
+    const m = { d, sig: btoa(String.fromCharCode(...sig)) };
+    await this.connect();
+    const live = this.mqs.filter(c => c.connected);
+    if (!live.length) { toast('Pas de connexion aux serveurs : réessaie dans un instant.', 3500); return false; }
+    const ack = await Promise.all(live.map(c => new Promise(res => { c.publish(this.TOPIC, JSON.stringify(m), { qos: 1, retain: true }, err => res(!err)); setTimeout(() => res(false), 8000); })));
+    await this.take(m);
+    if (!ack.some(Boolean)) { toast('Envoi incertain : réessaie.', 3500); return false; }
+    toast(on ? 'Jeu bloqué pour les autres. Toi seul peux jouer.' : 'Jeu rouvert à tout le monde.', 3500);
     return true;
   },
-  forget() { try { localStorage.removeItem('pf1-owner'); } catch (e) { } this.apply(); },
+  async connect() {
+    if (this.cn) return this.cn;
+    return this.cn = (async () => {
+      try { if (!window.mqtt) await loadScript('https://unpkg.com/mqtt@5.10.1/dist/mqtt.min.js'); } catch (e) { this.cn = null; return; }
+      const q = new URLSearchParams(location.search).get('mqtt');
+      const brokers = q ? q.split(',') : ['wss://broker.hivemq.com:8884/mqtt', 'wss://broker.emqx.io:8084/mqtt', 'wss://test.mosquitto.org:8081/mqtt'];
+      await Promise.all(brokers.map(url => new Promise(res => {
+        let c; try { c = mqtt.connect(url, { clientId: 'pf1l-' + Math.random().toString(36).slice(2, 10), clean: true, connectTimeout: 9000, reconnectPeriod: 5000, keepalive: 60, resubscribe: true }); } catch (e) { return res(); }
+        this.mqs.push(c);
+        c.on('connect', () => { c.subscribe(this.TOPIC, { qos: 1 }); res(); });
+        c.on('message', (t, p) => { let m = null; try { m = JSON.parse(p.toString()); } catch (e) { } this.take(m, c); });
+        c.on('error', () => { });
+        setTimeout(res, 9000);
+      })));
+    })();
+  },
   async check() {
     if (!/^https?:$/.test(location.protocol) || window.claude) return;
     try {
       const r = await fetch('maintenance.json?t=' + Date.now(), { cache: 'no-store' });
-      if (!r.ok) { this.on = false; return this.apply(); }
-      const j = await r.json();
-      this.on = !!j.on; this.msg = String(j.msg || '');
-    } catch (e) { return; } // hors ligne : on ne bloque pas
+      if (r.ok) { const j = await r.json(); this.jsonOn = !!j.on; this.jsonMsg = String(j.msg || ''); } else this.jsonOn = false;
+    } catch (e) { }
     this.apply();
   },
+  blocked() { return !!(this.st && this.st.on) || this.jsonOn; },
   apply() {
+    const on = this.blocked(), own = this.owner();
+    this.on = on; this.msg = (this.st && this.st.on && this.st.msg) || this.jsonMsg || '';
+    // rappel discret pour le propriétaire
+    let b = $('#lock-badge');
+    if (on && own) { if (!b) { b = document.createElement('div'); b.id = 'lock-badge'; b.style.cssText = 'position:fixed;bottom:calc(6px + env(safe-area-inset-bottom));left:50%;transform:translateX(-50%);z-index:9000;background:var(--red,#e10600);color:#fff;font:800 12px system-ui;padding:4px 12px;border-radius:99px;pointer-events:none;opacity:.9'; b.textContent = 'Jeu bloqué pour les autres'; document.body.appendChild(b); } }
+    else if (b) b.remove();
     const el = $('#lock-ov');
-    if (!this.on || this.owner()) { if (el) el.remove(); return; }
+    if (!on || own) { if (el) el.remove(); return; }
     if (Game.raf) return; // on ne coupe pas une course en cours : l'écran viendra à la fin
-    if (el) return;
+    if (el) { const p = $('#lk-m'); if (p) p.textContent = this.msg || 'Une mise à jour est en cours. Reviens un peu plus tard !'; return; }
     const d = document.createElement('div');
     d.id = 'lock-ov';
     d.style.cssText = 'position:fixed;inset:0;z-index:99999;background:#0b0d12;color:#fff;display:flex;align-items:center;justify-content:center;padding:24px;font-family:inherit;text-align:center';
     d.innerHTML = `<div style="max-width:420px">
       <div style="font-size:30px;font-weight:900;font-style:italic;margin-bottom:10px">Paddock F1</div>
       <div style="font-size:20px;font-weight:800;margin-bottom:8px">Jeu en maintenance</div>
-      <p class="muted" style="margin:0 0 20px">${esc(this.msg || 'Une mise à jour est en cours. Reviens un peu plus tard !')}</p>
-      <button class="btn" id="lk-re">Réessayer</button>
+      <p class="muted" id="lk-m" style="margin:0 0 20px">${esc(this.msg || 'Une mise à jour est en cours. Reviens un peu plus tard !')}</p>
+      <p class="muted" style="font-size:13px;margin:0">Le jeu se rouvrira tout seul dès que c'est fini.</p>
       <div style="margin-top:34px"><button class="btn small" id="lk-me" style="opacity:.55">Je suis le propriétaire</button></div>
       <div id="lk-f" style="display:none;margin-top:12px;gap:8px;justify-content:center">
         <input id="lk-c" class="btn" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="Code" style="width:150px;text-align:center;letter-spacing:2px">
@@ -6412,26 +6473,26 @@ const Lock = {
       </div>
       <p id="lk-e" style="color:var(--warn);min-height:1.2em;margin-top:8px"></p></div>`;
     document.body.appendChild(d);
-    $('#lk-re').onclick = () => this.check();
     $('#lk-me').onclick = () => { $('#lk-f').style.display = 'flex'; $('#lk-c').focus(); };
     const go = async () => {
       $('#lk-e').textContent = 'Vérification…';
-      if (await this.unlock($('#lk-c').value)) { toast('Appareil propriétaire : tu peux jouer.', 3000); this.apply(); }
+      if (await this.unlock($('#lk-c').value)) toast('Appareil propriétaire : tu peux jouer.', 3000);
       else $('#lk-e').textContent = 'Code incorrect.';
     };
     $('#lk-ok').onclick = go;
     $('#lk-c').onkeydown = e => { if (e.key === 'Enter') go(); };
   },
-  start() {
-    this.check();
+  async start() {
+    try { const m = JSON.parse(localStorage.getItem('pf1-lock') || 'null'); if (m) await this.take(m); } catch (e) { }
+    if (!/^https?:$/.test(location.protocol) || window.claude) return;
+    this.check(); this.connect();
     setInterval(() => this.check(), 60000);
-    document.addEventListener('visibilitychange', () => { if (!document.hidden) this.check(); });
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) { this.check(); this.mqs.forEach(c => { if (!c.connected) try { c.reconnect(); } catch (e) { } }); } });
   },
-  // réglages : déverrouiller cet appareil avant de lancer la maintenance
   ask(done) {
     const c = prompt('Code propriétaire :');
     if (c == null) return;
-    this.unlock(c).then(ok => { toast(ok ? 'Cet appareil est maintenant le tien : il pourra jouer pendant la maintenance.' : 'Code incorrect.', 3500); if (done) done(); });
+    this.unlock(c).then(ok => { toast(ok ? 'Cet appareil est à toi : tu peux bloquer le jeu pour les autres dans les Réglages.' : 'Code incorrect.', 3500); if (done) done(); });
   },
 };
 
@@ -6442,7 +6503,7 @@ const DISTS = [
   { k: '5', n: '5 tours', f: () => 5 }, { k: '15', n: '15 %', f: L => Math.max(5, Math.round(L * .15)) }, { k: '25', n: '25 %', f: L => Math.max(6, Math.round(L * .25)) },
   { k: '50', n: '50 %', f: L => Math.round(L * .5) }, { k: '100', n: '100 %', f: L => L },
 ];
-const APP_VER = '11 nov. · accès réservé';
+const APP_VER = '11 nov. · blocage propriétaire';
 const QFMT = [{ k: 'court', n: 'Courtes', d: [360, 300, 240], h: 'Q1 6 min · Q2 5 min · Q3 4 min' }, { k: 'moyen', n: 'Moyennes', d: [600, 480, 360], h: 'Q1 10 min · Q2 8 min · Q3 6 min' }, { k: 'reel', n: 'Réelles', d: [1080, 900, 720], h: 'Q1 18 min · Q2 15 min · Q3 12 min (comme en vrai)' }];
 const fmtClock = t => { t = Math.max(0, Math.ceil(t)); return Math.floor(t / 60) + ':' + String(t % 60).padStart(2, '0'); };
 const AI_LV = [{ n: 'Facile', off: 5 }, { n: 'Normal', off: 2.2 }, { n: 'Difficile', off: .9 }, { n: 'Légende', off: 0 }];
@@ -7281,7 +7342,10 @@ function settingsModal(onClose) {
         <div class="opt"><label>Décor</label><div class="seg" id="st-dc"><button data-v="kit" class="${p.decor !== 'classic' ? 'on' : ''}">Modèle importé</button><button data-v="classic" class="${p.decor === 'classic' ? 'on' : ''}">Classique</button></div></div>
         <p class="muted" style="font-size:13px;margin:0">Modèle importé : gradins couverts, murs grillagés, muret des stands, piles de pneus, arbres, lampadaires, panneaux, passerelle, tentes, tour et montgolfières (« Cartoon Race Track - Oval » de RCC Design, Sketchfab, CC BY 4.0), placés le long des vrais tracés. ${Kit.st === 'ready' ? 'Chargé.' : Kit.st === 'loading' ? 'Chargement…' : Kit.st === 'na' ? 'Disponible dans l\'appli installée (site).' : Kit.st === 'off' ? 'Qualité Moyenne ou plus.' : 'Échec du chargement.'}</p>
         <div class="opt"><label>Son des moteurs</label><div class="seg" id="st-s"><button data-v="1" class="${p.sound ? 'on' : ''}">Oui</button><button data-v="0" class="${!p.sound ? 'on' : ''}">Non</button></div></div>
-        <div class="opt"><label>Accès pendant la maintenance</label><div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">${Lock.owner() ? '<span style="color:var(--ok,#3c3);font-weight:800">Appareil propriétaire ✓</span><button class="btn small" id="st-own0">Oublier</button>' : '<button class="btn small" id="st-own">Cet appareil est à moi</button>'}</div></div>
+        <div class="opt"><label>Propriétaire du jeu</label><div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">${Lock.owner() ? '<span style="color:var(--ok,#3c3);font-weight:800">Cet appareil ✓</span><button class="btn small" id="st-own0">Oublier</button>' : '<button class="btn small" id="st-own">Cet appareil est à moi</button>'}</div></div>
+        ${Lock.owner() ? `<div class="opt"><label>Jeu pour les autres joueurs</label><div class="seg" id="st-lock"><button data-v="0" class="${Lock.blocked() ? '' : 'on'}">Ouvert</button><button data-v="1" class="${Lock.blocked() ? 'on' : ''}">Bloqué</button></div></div>
+        <div class="opt"><label for="st-lkm">Message affiché aux autres</label><input id="st-lkm" class="btn" maxlength="140" placeholder="Mise à jour en cours…" value="${esc((Lock.st && Lock.st.msg) || '')}" style="max-width:260px;text-align:left"></div>
+        ${Lock.jsonOn ? '<p class="muted" style="font-size:13px;margin:0">Bloqué aussi par le fichier maintenance.json du site.</p>' : ''}` : ''}
         <div class="opt"><label>Dégâts sur les voitures</label><div class="seg" id="st-dmg">${[['0', 'Aucun'], ['1', 'Moyens'], ['2', 'Forts']].map(([v, l]) => `<button data-v="${v}" class="${String(p.damage == null ? 1 : p.damage) === v ? 'on' : ''}">${l}</button>`).join('')}</div></div>
         <div class="opt"><label>Incidents aléatoires</label><div class="seg" id="st-inc"><button data-v="1" class="${p.incidents !== false ? 'on' : ''}">Oui</button><button data-v="0" class="${p.incidents === false ? 'on' : ''}">Non</button></div></div>
         <p class="muted" style="font-size:13px;margin:0">Accidents, casses, crevaisons de temps en temps, avec safety car, VSC ou drapeau rouge décidés par la direction de course.</p>
@@ -7301,6 +7365,7 @@ function settingsModal(onClose) {
     seg('st-inc', v => p.incidents = v === '1');
     if ($('#st-own')) $('#st-own').onclick = () => Lock.ask(draw);
     if ($('#st-own0')) $('#st-own0').onclick = () => { Lock.forget(); draw(); };
+    $$('#st-lock button').forEach(b => b.onclick = async () => { $$('#st-lock button').forEach(x => x.disabled = true); toast('Envoi…', 1500); await Lock.set(b.dataset.v === '1', $('#st-lkm').value); draw(); });
     seg('st-dmg', v => { p.damage = +v; if (Game.race) Game.race.dmgLv = +v; });
     seg('st-ts', v => p.trackStyle = v);
     seg('st-dc', v => p.decor = v);

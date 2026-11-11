@@ -16,7 +16,8 @@ Tracés des circuits : bacinger/f1-circuits (licence MIT, © Tomislav Bacinger).
 - Mécaniciens : « Car Mechanic Girl 2 » par **tech.service.allwe** (Sketchfab, https://sketchfab.com/3d-models/car-mechanic-girl-2-2e9b3051b8914c11868a952436eff33a), licence [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) — allégé (`mech.glb`, `mech-lo.glb`), cheveux retirés, tenue aux couleurs des écuries, casque ajouté, animé.
 - Safety Car : « 2019 Mercedes-Benz AMG GTR Safety Car » par **OUTPISTON** (Sketchfab), licence [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/) — textures recompressées ; le fichier `sc.glb` reste sous cette licence (usage non commercial, partage dans les mêmes conditions).
 
-## Maintenance (accès réservé)
-Dans `maintenance.json`, mettre `"on": true` pour que seuls les appareils propriétaires puissent jouer
-(`"msg"` : texte affiché aux autres joueurs). Remettre `"on": false` pour rouvrir le jeu à tout le monde.
-Un appareil devient propriétaire avec le code, dans Réglages → « Cet appareil est à moi ».
+## Blocage du jeu (propriétaire)
+Le propriétaire déclare son appareil avec son code (Réglages → « Cet appareil est à moi »), puis choisit
+« Jeu pour les autres joueurs : Ouvert / Bloqué ». L'ordre est signé (ECDSA) avec la clé du propriétaire,
+chiffrée dans la page et déverrouillée par le code, puis diffusé par les serveurs relais MQTT ; les autres
+appareils vérifient la signature. Secours : `"on": true` dans `maintenance.json` bloque aussi le jeu.
