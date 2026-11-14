@@ -236,8 +236,7 @@ table.std td.r, table.std th.r { text-align: right; }
 .flagbtn { display: flex; align-items: center; gap: 8px; text-align: left; font-size: 14px; padding: 8px 10px; }
 .flagbtn .flg { width: 26px; height: 18px; }
 .vign { position: absolute; inset: 0; pointer-events: none; background: radial-gradient(ellipse at 50% 46%, transparent 58%, rgba(0, 0, 0, .38) 100%); }
-.rainfx { position: absolute; inset: -20%; opacity: 0; transition: opacity 2s; background: repeating-linear-gradient(103deg, transparent 0 13px, rgba(200, 220, 255, .22) 13px 14px, transparent 14px 31px); animation: rain .35s linear infinite; }
-@keyframes rain { to { transform: translate(-8px, 46px); } }
+.rainfx { position: absolute; inset: 0; opacity: 0; pointer-events: none; overflow: hidden; }
 
 /* Radio façon TV */
 .radio-tv { position: absolute; left: 12px; top: 40px; width: min(480px, calc(100% - 24px)); pointer-events: none; transform: translateY(-10px); opacity: 0; transition: opacity .25s, transform .25s; z-index: 5; }
@@ -2044,6 +2043,7 @@ class World {
     try { this.clearTrack(new Set([...this.cars.values()].map(m => m.g))); } catch (e) { console.warn('clearTrack', e); }
     this.safety = {};
     this.buildSpray();
+    this.buildRain();
     this.linearize(s);
     this.cRed = new THREE.Color(0xff2010).convertSRGBToLinear(); this.cOff = new THREE.Color(0x220000).convertSRGBToLinear(); this.cRain = new THREE.Color(0x330000).convertSRGBToLinear();
     this.cams = new Map();
@@ -2604,10 +2604,10 @@ class World {
   // gerbes d'eau derrière les voitures sous la pluie
   buildSpray() {
     if (this.Q < 1) return;
-    const n = 1400, g = new THREE.BufferGeometry();
+    const n = this.Q >= 2 ? 3200 : 2000, g = new THREE.BufferGeometry();
     this.sp = { n, pos: new Float32Array(n * 3), vel: new Float32Array(n * 3), life: new Float32Array(n), k: 0 };
     g.setAttribute('position', new THREE.BufferAttribute(this.sp.pos, 3));
-    const m = new THREE.PointsMaterial({ size: 1.6, map: TEX.soft, transparent: true, opacity: .32, depthWrite: false, color: 0xdfe6ee });
+    const m = new THREE.PointsMaterial({ size: 3.6, map: TEX.soft, transparent: true, opacity: .2, depthWrite: false, color: 0xd5dde6 });
     this.spray = new THREE.Points(g, m); this.spray.frustumCulled = false; this.scene.add(this.spray);
     this.sp.pos.fill(-9999);
     if (this.Q >= 2) {
@@ -2625,12 +2625,16 @@ class World {
       for (const [c] of this.cars) {
         if (c.dnf || c.v < 15) continue;
         if (Math.abs(c.x - focus.x) > 320 || Math.abs(c.z - focus.z) > 320) continue;
-        const nSp = Math.min(6, Math.round(c.v * w * dt * 3 + Math.random()));
+        const nSp = Math.min(12, Math.round(c.v * w * dt * 6 + Math.random()));
+        const sh = Math.sin(c.h), ch = Math.cos(c.h);
         for (let k = 0; k < nSp; k++) {
-          const i = sp.k = (sp.k + 1) % sp.n, sh = Math.sin(c.h), ch = Math.cos(c.h), side = (Math.random() - .5) * 1.8;
-          sp.pos[i * 3] = c.x - sh * 2.8 + ch * side; sp.pos[i * 3 + 1] = c.y + .3; sp.pos[i * 3 + 2] = c.z - ch * 2.8 - sh * side;
-          sp.vel[i * 3] = sh * c.v * .35 + (Math.random() - .5) * 3; sp.vel[i * 3 + 1] = 1.5 + Math.random() * 3; sp.vel[i * 3 + 2] = ch * c.v * .35 + (Math.random() - .5) * 3;
-          sp.life[i] = .7 + Math.random() * .6;
+          const i = sp.k = (sp.k + 1) % sp.n, mist = Math.random() < .35;
+          // les roues arrière soulèvent l'eau (± 0,75 m), la brume reste derrière et s'élargit
+          const side = mist ? (Math.random() - .5) * 2.4 : (k % 2 ? .75 : -.75) + (Math.random() - .5) * .35, back = 2.2 + Math.random() * .6;
+          sp.pos[i * 3] = c.x - sh * back + ch * side; sp.pos[i * 3 + 1] = c.y + .25 + Math.random() * .3; sp.pos[i * 3 + 2] = c.z - ch * back - sh * side;
+          const fw = mist ? .7 : .45, up = mist ? .8 + Math.random() * 1.5 : 2.5 + Math.random() * 3.5, spread = mist ? 3.5 : 1.6;
+          sp.vel[i * 3] = sh * c.v * fw + ch * side * 1.4 + (Math.random() - .5) * spread; sp.vel[i * 3 + 1] = up; sp.vel[i * 3 + 2] = ch * c.v * fw - sh * side * 1.4 + (Math.random() - .5) * spread;
+          sp.life[i] = mist ? 1.6 + Math.random() * 1.4 : .6 + Math.random() * .6;
         }
       }
     }
@@ -2638,10 +2642,10 @@ class World {
       if (sp.life[i] <= 0) continue;
       sp.life[i] -= dt; if (sp.life[i] <= 0) { sp.pos[i * 3 + 1] = -9999; continue; }
       sp.pos[i * 3] += sp.vel[i * 3] * dt; sp.pos[i * 3 + 1] += sp.vel[i * 3 + 1] * dt; sp.pos[i * 3 + 2] += sp.vel[i * 3 + 2] * dt;
-      sp.vel[i * 3] *= .96; sp.vel[i * 3 + 2] *= .96; sp.vel[i * 3 + 1] -= 2 * dt;
+      const dr = Math.pow(.25, dt); sp.vel[i * 3] *= dr; sp.vel[i * 3 + 2] *= dr; sp.vel[i * 3 + 1] = sp.vel[i * 3 + 1] * dr - 3 * dt;
     }
     this.spray.geometry.attributes.position.needsUpdate = true;
-    this.spray.material.opacity = .15 + w * .3;
+    this.spray.material.opacity = .08 + w * .22;
   }
   // hauteur d'un vibreur (au-dessus de la route) à une distance latérale donnée du centre de la piste
   kerbH(lat) {
@@ -2652,9 +2656,9 @@ class World {
   }
   setWeather(w, rain) {
     this.updateSky(w, rain);
-    this.roadMat.roughness = lerp(.88, .22, clamp(w * 1.4, 0, 1));
+    this.roadMat.roughness = lerp(.88, .12, clamp(w * 1.4, 0, 1));
     const rb = this.roadBase || 1; this.roadMat.color.setRGB(rb * (1 - w * .5), rb * (1 - w * .5), rb * (1 - w * .45));
-    this.roadMat.envMapIntensity = .5 + w * 1.6;
+    this.roadMat.envMapIntensity = .5 + w * 2;
   }
   sync(dt = 0) {
     const r = this.race, T = this.T;
@@ -2790,11 +2794,12 @@ class World {
         this.mainCam = st.cam; this.mainCar = c;
         if (c && this.sun.castShadow) { this.sun.target.position.set(c.x, c.y, c.z); this.sun.position.set(c.x + this.sunDir.x * 400, c.y + this.sunDir.y * 400, c.z + this.sunDir.z * 400); this.sun.target.updateMatrixWorld(); R.shadowMap.needsUpdate = true; }
       }
+      st.lastCar = c; this.rainView(st, dt);
       R.setViewport(r.left, H - r.bottom, r.width, r.height);
       R.setScissor(r.left, H - r.bottom, r.width, r.height);
       R.render(this.scene, st.cam);
     }
-    this.updateSpray(dt, focus); this.updateSparks(dt, focus);
+    this.updateSpray(dt, focus); this.updateSparks(dt, focus); this.updateRain(dt);
   }
   dispose() {
     this.scene.traverse(o => {
@@ -4440,6 +4445,164 @@ World.prototype.syncMechs = function (dt) {
     if (d > 70 || (i + this._mk) % 2) continue; // animation seulement près de la caméra, une image sur deux
     mPose(P, P.pose || 'idle', dt * 2, P.ph);
   }
+};
+/* =====================================================================
+   PLUIE RÉALISTE : gouttes qui tombent en 3D autour de la caméra (traînées
+   étirées par la vitesse), éclaboussures sur la piste, gouttes sur la visière
+   ou l'objectif, bruit de la pluie.
+   ===================================================================== */
+World.prototype.buildRain = function () {
+  const Q = this.Q, N = Q >= 2 ? 7000 : Q >= 1 ? 4500 : 2500;
+  const seed = new Float32Array(N * 6), tip = new Float32Array(N * 2);
+  for (let i = 0; i < N; i++) {
+    const a = Math.random(), b = Math.random(), c = Math.random();
+    seed.set([a, b, c, a, b, c], i * 6); tip[i * 2] = 0; tip[i * 2 + 1] = 1;
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(seed, 3)); // la position est calculée dans le shader
+  g.setAttribute('tip', new THREE.BufferAttribute(tip, 1));
+  const U = this.rainU = {
+    uTime: { value: 0 }, uBox: { value: new THREE.Vector3(64, 34, 64) }, uFall: { value: new THREE.Vector3(1.4, -12.5, .6) },
+    uRel: { value: new THREE.Vector3(0, -12.5, 0) }, uOp: { value: 0 }, uCol: { value: new THREE.Color(0xc8d4e0) },
+  };
+  const m = new THREE.ShaderMaterial({
+    uniforms: U, transparent: true, depthWrite: false,
+    vertexShader: `attribute float tip; uniform float uTime; uniform vec3 uBox, uFall, uRel; uniform float uOp; varying float vA;
+      void main() {
+        vec3 p = position * uBox + uFall * uTime;
+        p = mod(p - cameraPosition + uBox * .5, uBox) - uBox * .5 + cameraPosition;
+        float L = clamp(length(uRel) * .022, .25, 2.6);
+        vec3 q = p - normalize(uRel) * L * tip;
+        float d = distance(p, cameraPosition);
+        vA = uOp * smoothstep(.6, 2.5, d) * (1. - smoothstep(uBox.x * .22, uBox.x * .5, d)) * mix(1., .05, tip);
+        gl_Position = projectionMatrix * viewMatrix * vec4(q, 1.);
+      }`,
+    fragmentShader: `uniform vec3 uCol; varying float vA; void main() { gl_FragColor = vec4(uCol, vA); }`,
+  });
+  this.rainN = N;
+  this.rain3d = new THREE.LineSegments(g, m); this.rain3d.frustumCulled = false; this.rain3d.renderOrder = 5; this.rain3d.visible = false;
+  this.scene.add(this.rain3d);
+  // éclaboussures : petits anneaux qui naissent et s'effacent sur la piste autour de la voiture suivie
+  if (Q >= 1) {
+    const n = Q >= 2 ? 1400 : 700, sd = new Float32Array(n * 3);
+    for (let i = 0; i < n; i++) sd.set([Math.random(), Math.random(), Math.random()], i * 3);
+    const g2 = new THREE.BufferGeometry(); g2.setAttribute('position', new THREE.BufferAttribute(sd, 3));
+    this.splU = { uTime: { value: 0 }, uC: { value: new THREE.Vector3() }, uR: { value: 26 }, uOp: { value: 0 }, uPx: { value: 300 } };
+    const m2 = new THREE.ShaderMaterial({
+      uniforms: this.splU, transparent: true, depthWrite: false,
+      vertexShader: `uniform float uTime, uR, uOp, uPx; uniform vec3 uC; varying float vA, vF;
+        void main() {
+          float tt = uTime / .42 + position.z * 7.; float cell = floor(tt), f = fract(tt);
+          vec2 h = fract(sin(vec2(cell * 12.9898 + position.x * 78.233, cell * 39.346 + position.y * 11.135)) * 43758.5453);
+          vec3 p = vec3(uC.x + (h.x - .5) * 2. * uR, uC.y + .05, uC.z + (h.y - .5) * 2. * uR);
+          vec4 mv = viewMatrix * vec4(p, 1.);
+          vF = f; vA = uOp * (1. - f) * (1. - smoothstep(uR * .6, uR, length(p.xz - uC.xz)));
+          gl_PointSize = uPx * (.05 + f * .12) / max(1., -mv.z);
+          gl_Position = projectionMatrix * mv;
+        }`,
+      fragmentShader: `varying float vA, vF; void main() { float d = length(gl_PointCoord - .5) * 2.; float ring = smoothstep(.55, .8, d) * (1. - smoothstep(.85, 1., d)); float core = (1. - smoothstep(0., .35, d)) * (1. - vF); gl_FragColor = vec4(.85, .9, .96, vA * max(ring, core * .8)); }`,
+    });
+    this.splash = new THREE.Points(g2, m2); this.splash.frustumCulled = false; this.splash.visible = false; this.scene.add(this.splash);
+  }
+};
+// avant chaque vue : vitesse de la caméra → direction et longueur des traînées
+World.prototype.rainView = function (st, dt) {
+  if (!this.rainU || !this.rain3d.visible) return;
+  const p = st.cam.position, U = this.rainU;
+  if (!st.rpv) st.rpv = p.clone();
+  const k = dt > 0 ? 1 / dt : 0, vx = (p.x - st.rpv.x) * k, vy = (p.y - st.rpv.y) * k, vz = (p.z - st.rpv.z) * k;
+  st.rpv.copy(p);
+  st.rvel = st.rvel || new THREE.Vector3();
+  if (Math.abs(vx) + Math.abs(vy) + Math.abs(vz) < 400) st.rvel.lerp(new THREE.Vector3(vx, vy, vz), Math.min(1, dt * 8));
+  U.uRel.value.copy(U.uFall.value).sub(st.rvel);
+  if (this.splU) { const c = st.lastCar || this.mainCar; if (c) this.splU.uC.value.set(c.x, c.y, c.z); this.splU.uPx.value = window.innerHeight * 1.2; }
+};
+World.prototype.updateRain = function (dt) {
+  if (!this.rainU) return;
+  const r = this.race, rain = r.rain || 0, on = rain > .02;
+  this.rain3d.visible = on;
+  if (this.splash) this.splash.visible = on;
+  if (!on) return;
+  const U = this.rainU; U.uTime.value += dt;
+  U.uOp.value = .22 + rain * .3;
+  U.uFall.value.set(1.4 + rain * 1.5, -(10.5 + rain * 4), .6);
+  this.rain3d.geometry.setDrawRange(0, Math.round(this.rainN * (.25 + rain * .75)) * 2);
+  // la nuit, la pluie est plus sombre (éclairée seulement par les projecteurs)
+  U.uCol.value.setRGB(...(this.T.info.night ? [.55, .6, .7] : [.78, .83, .88]));
+  if (this.splU) { this.splU.uTime.value = U.uTime.value; this.splU.uOp.value = .25 + rain * .45; this.splash.geometry.setDrawRange(0, Math.round(this.splash.geometry.attributes.position.count * (.3 + rain * .7))); }
+};
+
+/* ---- gouttes à l'écran : visière (cockpit / caméra embarquée) ou objectif (caméras TV) ---- */
+const RainFX = {
+  spr: null,
+  sprite() {
+    if (this.spr) return this.spr;
+    const c = document.createElement('canvas'); c.width = c.height = 64; const g = c.getContext('2d');
+    // goutte : bord sombre en bas (réfraction), centre clair, reflet en haut à gauche
+    let gr = g.createRadialGradient(32, 30, 4, 32, 32, 30);
+    gr.addColorStop(0, 'rgba(235,242,250,.10)'); gr.addColorStop(.7, 'rgba(200,210,225,.16)'); gr.addColorStop(.9, 'rgba(20,26,34,.38)'); gr.addColorStop(1, 'rgba(20,26,34,0)');
+    g.fillStyle = gr; g.beginPath(); g.arc(32, 32, 30, 0, 7); g.fill();
+    gr = g.createRadialGradient(24, 20, 0, 24, 20, 9); gr.addColorStop(0, 'rgba(255,255,255,.85)'); gr.addColorStop(1, 'rgba(255,255,255,0)');
+    g.fillStyle = gr; g.beginPath(); g.arc(24, 20, 9, 0, 7); g.fill();
+    gr = g.createRadialGradient(38, 45, 0, 38, 45, 7); gr.addColorStop(0, 'rgba(255,255,255,.35)'); gr.addColorStop(1, 'rgba(255,255,255,0)');
+    g.fillStyle = gr; g.beginPath(); g.arc(38, 45, 7, 0, 7); g.fill();
+    return this.spr = c;
+  },
+  // el : le calque .rainfx ; mode : 'visor' ou 'lens' ; speed en m/s
+  step(el, rain, speed, mode) {
+    if (!el) return;
+    const now = performance.now(), st = el._rf || (el._rf = { t: now, drops: [], cv: null });
+    const dt = Math.min(.1, (now - st.t) / 1000); st.t = now;
+    if (rain < .02 && !st.drops.length) { if (st.cv) st.cv.style.display = 'none'; el.style.opacity = 0; return; }
+    el.style.opacity = 1;
+    if (!st.cv) { st.cv = document.createElement('canvas'); st.cv.style.cssText = 'position:absolute;inset:0;width:100%;height:100%'; el.appendChild(st.cv); }
+    const cv = st.cv, dpr = Math.min(1.5, window.devicePixelRatio || 1), W = Math.round(el.clientWidth * dpr), H = Math.round(el.clientHeight * dpr);
+    if (!W || !H) return;
+    cv.style.display = '';
+    if (cv.width !== W || cv.height !== H) { cv.width = W; cv.height = H; }
+    const s = clamp(speed / 75, 0, 1), sc = Math.min(W, H) / 700, vis = mode === 'visor';
+    // apparition
+    let n = rain * (vis ? 25 + 90 * s : 5) * dt;
+    while (n > 0 && st.drops.length < (vis ? 170 : 40)) {
+      if (Math.random() < n) st.drops.push({ x: Math.random() * W, y: Math.random() * H * (vis ? .9 : 1), r: (vis ? 3 + Math.random() * 7 : 6 + Math.random() * 12) * sc * dpr, a: 0, age: 0, life: vis ? (s > .25 ? .35 + Math.random() * .6 : 2 + Math.random() * 3) : 2.5 + Math.random() * 3, vx: 0, vy: 0, hold: Math.random() * 1.5 });
+      n -= 1;
+    }
+    const g = cv.getContext('2d'), spr = this.sprite(), cx = W * .5, cy = H * .62;
+    g.clearRect(0, 0, W, H);
+    st.drops = st.drops.filter(d => {
+      d.age += dt; if (d.age > d.life) return false;
+      d.a = Math.min(1, d.age * 8) * Math.min(1, (d.life - d.age) * 2.5);
+      if (vis && s > .2) {
+        // l'air chasse les gouttes vers le haut et vers les bords de la visière
+        const k = s * 2.2; d.vx = (d.x - cx) * k; d.vy = (d.y - cy) * k * .6 - 420 * s * dpr * sc;
+      } else if (vis || d.age > d.hold) {
+        // à l'arrêt : la goutte grossit puis glisse doucement vers le bas
+        d.vy += (d.r > 6 * sc * dpr ? 60 : 12) * dt * dpr * sc; d.vx *= .9;
+      }
+      d.x += d.vx * dt; d.y += d.vy * dt;
+      if (d.x < -40 || d.x > W + 40 || d.y < -40 || d.y > H + 40) return false;
+      const v = Math.hypot(d.vx, d.vy), stretch = 1 + Math.min(4, v / (500 * dpr));
+      g.save(); g.globalAlpha = d.a * (vis ? .95 : .7); g.translate(d.x, d.y);
+      if (v > 1) g.rotate(Math.atan2(d.vy, d.vx) + Math.PI / 2);
+      g.drawImage(spr, -d.r, -d.r * stretch, d.r * 2, d.r * 2 * stretch);
+      g.restore();
+      return true;
+    });
+  },
+  // bruit de la pluie (Web Audio), plus fort dans le cockpit
+  audio(level) {
+    const ctx = Sfx.ctx; if (!ctx || !Sfx.noiseBuf) return;
+    if (!this.ag) {
+      const src = ctx.createBufferSource(); src.buffer = Sfx.noiseBuf(); src.loop = true;
+      const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 700;
+      const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 6500;
+      this.ag = ctx.createGain(); this.ag.gain.value = 0;
+      src.connect(hp).connect(lp).connect(this.ag).connect(ctx.destination); src.start();
+    }
+    const on = Game.prefs && Game.prefs.sound !== false;
+    this.ag.gain.setTargetAtTime(on ? clamp(level, 0, 1) * .05 : 0, ctx.currentTime, .4);
+  },
+  stop() { if (this.ag) this.ag.gain.setTargetAtTime(0, Sfx.ctx.currentTime, .2); },
 };
 
 /* =====================================================================
@@ -6503,7 +6666,7 @@ const DISTS = [
   { k: '5', n: '5 tours', f: () => 5 }, { k: '15', n: '15 %', f: L => Math.max(5, Math.round(L * .15)) }, { k: '25', n: '25 %', f: L => Math.max(6, Math.round(L * .25)) },
   { k: '50', n: '50 %', f: L => Math.round(L * .5) }, { k: '100', n: '100 %', f: L => L },
 ];
-const APP_VER = '11 nov. · blocage propriétaire';
+const APP_VER = '14 nov. · pluie réaliste';
 const QFMT = [{ k: 'court', n: 'Courtes', d: [360, 300, 240], h: 'Q1 6 min · Q2 5 min · Q3 4 min' }, { k: 'moyen', n: 'Moyennes', d: [600, 480, 360], h: 'Q1 10 min · Q2 8 min · Q3 6 min' }, { k: 'reel', n: 'Réelles', d: [1080, 900, 720], h: 'Q1 18 min · Q2 15 min · Q3 12 min (comme en vrai)' }];
 const fmtClock = t => { t = Math.max(0, Math.ceil(t)); return Math.floor(t / 60) + ':' + String(t % 60).padStart(2, '0'); };
 const AI_LV = [{ n: 'Facile', off: 5 }, { n: 'Normal', off: 2.2 }, { n: 'Difficile', off: .9 }, { n: 'Légende', off: 0 }];
@@ -6782,7 +6945,7 @@ function startSessionNow(session) {
 }
 function stopRace() {
   if ($('#qbreak')) $('#qbreak').remove();
-  cancelAnimationFrame(Game.raf); Game.raf = 0; setTimeout(() => Lock.apply(), 0); Sfx.engineOff(); Sfx.hiss(false); Speech.stop(); Mic.shutdown();
+  cancelAnimationFrame(Game.raf); Game.raf = 0; setTimeout(() => Lock.apply(), 0); RainFX.stop(); Sfx.engineOff(); Sfx.hiss(false); Speech.stop(); Mic.shutdown();
   if (Game.world) { Game.world.dispose(); Game.world = null; }
   Radio.reset(); Radio.onPush = null;
 }
@@ -7107,7 +7270,6 @@ function updateMonitors(force) {
     const k = m.dataset.kind, body = $('.mon-body', m);
     if (/^(tv|heli|onboard|tcam|chase|rear)/.test(k)) {
       const spec = camSpec(k), c = spec.car || Game.world.tv.target || r.order[0];
-      $('.rainfx', body).style.opacity = clamp(r.rain * 1.2, 0, .9);
       setFlagUI($('.flagwrap', body), flagFor(r, c), c ? ' · ' + c.code : '');
       const l3 = $('.lower3', body), onb = $('.onb', body);
       if (c) l3.innerHTML = `<span class="pos">${c.pos}</span><span class="bar" style="--c:${c.team.color}"></span><span class="nm">${esc(c.drv.last.toUpperCase())}<small>${esc(c.team.name)} ${tyreHTML(c.comp)}</small></span>`;
@@ -7272,7 +7434,6 @@ function updateCockpit() {
   $('#ck-tyres').innerHTML = me.temps.map((t, q) => `<span><i style="--c:${tempCol(t)}"></i>${Math.round(100 - clamp(me.wear * f[q], 0, 100))}%</span>`).join('');
   { const k = r.w < .05 ? 0 : r.w < .22 ? 1 : r.w < .72 ? 2 : 3; if ($('#ck-wx')._k !== k) { $('#ck-wx')._k = k; $('#ck-wx').innerHTML = wxIcon(r.w); } }
   $('#ck-mode').textContent = `${COMP[me.comp].n} · ${me.pitReq ? 'BOX ' + (me.pitComp ? COMP[me.pitComp].n : '') : me.manual ? ['', 'Aide freinage', 'Aides débutant'][r.assist] : 'PILOTE AUTO'}${me.dmg >= 5 ? ' · Dégâts ' + Math.round(me.dmg) + ' %' : ''}`;
-  $('.rainfx', $('#ck-view')).style.opacity = clamp(r.rain * 1.2, 0, .9);
   setFlagUI($('#ck-flag'), flagFor(r, me));
   if ($('#ck-box')) $('#ck-box').classList.toggle('primary', me.pitReq);
   const lights = $('#ck-lights');
@@ -7511,6 +7672,13 @@ function frame(now) {
   if (Game.cine) { Game.cine.t += rdt; w.stepPodium(rdt); if (Game.cine.t > 30) Game.cine.end(); if (!Game.world) return; }
   w.sync(rdt);
   w.render(Game.views, rdt);
+  // pluie à l'écran (gouttes sur la visière ou l'objectif) et bruit de la pluie, à chaque image
+  Game.views.forEach((v, k) => {
+    const el = v.el && v.el.querySelector('.rainfx'); if (!el) return;
+    const c = v.spec.car || w.mainCar, vis = v.spec.type === 'onboard' || v.spec.type === 'eyes';
+    RainFX.step(el, Game.cine ? 0 : r.rain, c ? c.v : 0, vis ? 'visor' : 'lens');
+    if (k === 0) RainFX.audio(Game.cine ? 0 : r.rain * (vis ? 1 : .55));
+  });
   if (!Game.cine) engineAudio(r, w, rdt);
   if (pilot) updateDash();
   if (now - Game.uiT > 130) {
