@@ -6420,9 +6420,10 @@ function renderLobby() {
         ${cfg.ownerRole === 'duo' ? `<div><b>Toi : ${ic('helmet')} Pilote — ${esc((role === 'pilot' ? d : DRV[cfg.drv2]).name)}</b><br><span class="muted">Ton coéquipier : ${ic('helmet')} Pilote — ${esc((role === 'pilot' ? DRV[cfg.drv2] : d).name)}<br>Chacun a son ingénieur à la radio.</span></div>`
           : `<div><b>Toi : ${role === 'pilot' ? ic('helmet') + ' Pilote — ' + esc(d.name) : ic('head') + ' Ingénieur de course'}</b><br><span class="muted">Ton coéquipier : ${role === 'pilot' ? ic('head') + ' Ingénieur au mur des stands' : ic('helmet') + ' Pilote — ' + esc(d.name)}</span></div>`}
         <div><span class="tbar" style="--c:${t.color}"></span> ${esc(t.full)}</div>
-        <div>${def.flag} <b>${esc(gpName(def))}</b> · ${DISTS.find(x => x.k === cfg.dist).f(def.laps)} tours · ${cfg.aic ?? 20} voiture${(cfg.aic ?? 20) > 1 ? 's' : ''} de l'ordinateur</div>
+        <div>${def.flag} <b>${esc(gpName(def))}</b> · ${DISTS.find(x => x.k === cfg.dist).f(def.laps)} tours · météo : ${(WX.find(x => x.k === (cfg.wx || 'rand')) || WX[0]).n.toLowerCase()} · ${cfg.aic ?? 20} voiture${(cfg.aic ?? 20) > 1 ? 's' : ''} de l'ordinateur</div>
         ${m.owner ? `<label class="muted" for="l-gp">Changer de Grand Prix</label><select id="l-gp" class="btn" style="text-align:left">${TRACKS.map((x, i) => `<option value="${i}" ${i === cfg.gp ? 'selected' : ''}>${esc(gpName(x))}</option>`).join('')}</select>
           <div class="seg" id="l-dist">${DISTS.map(x => `<button data-v="${x.k}" class="${cfg.dist === x.k ? 'on' : ''}">${x.n}</button>`).join('')}</div>
+          <div class="seg" id="l-wx">${WX.map(x => `<button data-v="${x.k}" class="${(cfg.wx || 'rand') === x.k ? 'on' : ''}" title="${x.h}">${x.n}</button>`).join('')}</div>
           <button class="btn primary big" id="l-go" ${Net.partner ? '' : 'disabled'}>${cfg.ownerRole === 'duo' ? 'Lancer la course ensemble' : 'Lancer le week-end'} ${ic('right')}</button>`
       : `<p class="muted" style="margin:0">${cfg.ownerRole === 'duo' ? 'Ton ami lance la course : vous arriverez tous les deux sur la même grille, au même moment.' : 'Ton ami lance le week-end. ' + (role === 'engineer' ? 'Tu arriveras au mur des stands dès que le pilote prend le départ.' : '')}</p>`}
       </div>
@@ -6433,6 +6434,7 @@ function renderLobby() {
   if (m.owner) {
     $('#l-gp').onchange = e => { cfg.gp = +e.target.value; Net.send('cfg', cfg); renderLobby(); };
     $$('#l-dist button').forEach(b => b.onclick = () => { cfg.dist = b.dataset.v; Net.send('cfg', cfg); renderLobby(); });
+    $$('#l-wx button').forEach(b => b.onclick = () => { cfg.wx = b.dataset.v; Net.send('cfg', cfg); renderLobby(); });
     $('#l-go').onclick = () => { Net.send('cfg', cfg); if (role === 'pilot') { if (cfg.ownerRole === 'duo') Net.send('go', {}); mpWeekend(); } else { Net.send('go', {}); mpWaiting(); } };
   }
   show('scr-setup');
@@ -6440,7 +6442,7 @@ function renderLobby() {
 function mpWeekend() {
   const cfg = Game.mp.cfg;
   Game.multi = true;
-  Game.wk = { quick: true, multi: true, gp: cfg.gp, role: 'pilot', team: cfg.team, drv: cfg.drv, dist: cfg.dist, ai: cfg.ai, assist: cfg.assist, aic: cfg.aic ?? 20, duo: cfg.ownerRole === 'duo', drv2: cfg.drv2 };
+  Game.wk = { quick: true, multi: true, gp: cfg.gp, role: 'pilot', team: cfg.team, drv: cfg.drv, dist: cfg.dist, ai: cfg.ai, assist: cfg.assist, aic: cfg.aic ?? 20, duo: cfg.ownerRole === 'duo', drv2: cfg.drv2, wx: cfg.wx || 'rand' };
   if (!Game.mp.owner) Net.send('cfg', cfg);
   renderWeekend();
   if (Game.wk.duo) { // même circuit, même moment : grille établie tout de suite et départ pour les deux
@@ -6666,7 +6668,7 @@ const DISTS = [
   { k: '5', n: '5 tours', f: () => 5 }, { k: '15', n: '15 %', f: L => Math.max(5, Math.round(L * .15)) }, { k: '25', n: '25 %', f: L => Math.max(6, Math.round(L * .25)) },
   { k: '50', n: '50 %', f: L => Math.round(L * .5) }, { k: '100', n: '100 %', f: L => L },
 ];
-const APP_VER = '14 nov. · pluie réaliste';
+const APP_VER = '14 nov. · choix de la météo';
 const QFMT = [{ k: 'court', n: 'Courtes', d: [360, 300, 240], h: 'Q1 6 min · Q2 5 min · Q3 4 min' }, { k: 'moyen', n: 'Moyennes', d: [600, 480, 360], h: 'Q1 10 min · Q2 8 min · Q3 6 min' }, { k: 'reel', n: 'Réelles', d: [1080, 900, 720], h: 'Q1 18 min · Q2 15 min · Q3 12 min (comme en vrai)' }];
 const fmtClock = t => { t = Math.max(0, Math.ceil(t)); return Math.floor(t / 60) + ':' + String(t % 60).padStart(2, '0'); };
 const AI_LV = [{ n: 'Facile', off: 5 }, { n: 'Normal', off: 2.2 }, { n: 'Difficile', off: .9 }, { n: 'Légende', off: 0 }];
@@ -6751,6 +6753,7 @@ function renderSetup(kind) {
       <div class="section"><h3>Options</h3><div class="card opts">
         ${kind !== 'career' ? `<div class="opt"><label>Voitures de l'ordinateur <small class="muted" id="o-aic-t">(${aicTxt(S)})</small></label><div class="stepper" id="o-aic"><button class="btn small" data-d="-1" aria-label="Moins">−</button><input type="range" min="0" max="20" step="1" value="${S.aic ?? 20}" aria-label="Nombre de voitures de l'ordinateur"><b class="num">${S.aic ?? 20}</b><button class="btn small" data-d="1" aria-label="Plus">+</button></div></div>` : ''}
         <div class="opt"><label>Durée des courses</label><div class="seg" id="o-dist">${DISTS.map(x => `<button data-v="${x.k}" class="${S.dist === x.k ? 'on' : ''}">${x.n}</button>`).join('')}</div></div>
+        <div class="opt"><label>Météo</label><div class="seg" id="o-wx">${WX.map(x => `<button data-v="${x.k}" class="${(S.wx || 'rand') === x.k ? 'on' : ''}" title="${x.h}">${x.n}</button>`).join('')}</div></div>
         ${S.role === 'pilot' || S.role === 'duo' || kind === 'multi' ? `<div class="opt"><label>Niveau des adversaires</label><div class="seg" id="o-ai">${AI_LV.map((x, i) => `<button data-v="${i}" class="${S.ai === i ? 'on' : ''}">${x.n}</button>`).join('')}</div></div>
         <div class="opt"><label>Aides au pilotage</label><div class="seg" id="o-as">${ASSISTS.map((x, i) => `<button data-v="${i}" class="${S.assist === i ? 'on' : ''}" title="${x.d}">${x.n}</button>`).join('')}</div></div>` : ''}
         <div class="opt"><label>Voix à la radio</label><div class="seg" id="o-voice"><button data-v="1" class="${p.voice ? 'on' : ''}">Activées</button><button data-v="0" class="${!p.voice ? 'on' : ''}">Texte seul</button></div></div>
@@ -6772,16 +6775,16 @@ function renderSetup(kind) {
       rg.oninput = () => set(+rg.value);
       $$('button', st).forEach(b => b.onclick = () => set((S.aic ?? 20) + +b.dataset.d));
     }
-    const segs = { 'o-dist': v => S.dist = v, 'o-ai': v => S.ai = +v, 'o-as': v => S.assist = +v, 'o-voice': v => p.voice = v === '1', 'o-oth': v => p.others = v === '1', 'o-q': v => p.quality = +v, 'o-iai': v => p.ai = v === '1' };
+    const segs = { 'o-wx': v => S.wx = v, 'o-dist': v => S.dist = v, 'o-ai': v => S.ai = +v, 'o-as': v => S.assist = +v, 'o-voice': v => p.voice = v === '1', 'o-oth': v => p.others = v === '1', 'o-q': v => p.quality = +v, 'o-iai': v => p.ai = v === '1' };
     for (const id in segs) { const g = $('#' + id); if (g) $$('button', g).forEach(b => b.onclick = () => { segs[id](b.dataset.v); Store.savePrefs(p); draw(); }); }
     $('#s-go').onclick = () => {
       const tm = TEAM[S.team];
-      if (kind === 'multi') return createLobby({ ownerRole: S.role === 'duo' ? 'duo' : S.role === 'pilot' ? 'pilot' : 'engineer', team: S.team, drv: tm.drivers[S.drvIdx].code, drv2: tm.drivers[1 - S.drvIdx].code, gp: S.gp, dist: S.dist, ai: S.ai, assist: S.assist, aic: S.aic ?? 20 });
+      if (kind === 'multi') return createLobby({ ownerRole: S.role === 'duo' ? 'duo' : S.role === 'pilot' ? 'pilot' : 'engineer', team: S.team, drv: tm.drivers[S.drvIdx].code, drv2: tm.drivers[1 - S.drvIdx].code, gp: S.gp, dist: S.dist, ai: S.ai, assist: S.assist, aic: S.aic ?? 20, wx: S.wx || 'rand' });
       if (kind === 'career') {
-        Game.save = { v: 1, role: S.role, team: S.team, drv: tm.drivers[S.drvIdx].code, round: 0, dist: S.dist, ai: S.ai, assist: S.assist, pts: {}, tpts: {}, results: [], dev: {}, budget: 6, upg: { aero: 0, engine: 0, rel: 0, pit: 0 } };
+        Game.save = { v: 1, role: S.role, team: S.team, drv: tm.drivers[S.drvIdx].code, round: 0, dist: S.dist, ai: S.ai, assist: S.assist, wx: S.wx || 'rand', pts: {}, tpts: {}, results: [], dev: {}, budget: 6, upg: { aero: 0, engine: 0, rel: 0, pit: 0 } };
         Store.save(Game.save); renderHub();
       } else {
-        Game.wk = { quick: true, gp: S.gp, role: S.role === 'duo' ? 'pilot' : S.role, team: S.team, drv: tm.drivers[S.drvIdx].code, dist: S.dist, ai: S.ai, assist: S.assist, aic: S.aic ?? 20 };
+        Game.wk = { quick: true, gp: S.gp, role: S.role === 'duo' ? 'pilot' : S.role, team: S.team, drv: tm.drivers[S.drvIdx].code, dist: S.dist, ai: S.ai, assist: S.assist, aic: S.aic ?? 20, wx: S.wx || 'rand' };
         renderWeekend();
       }
     };
@@ -6822,15 +6825,26 @@ function renderHub() {
       </div>
     </div></div>`;
   $('#u-menu').onclick = renderHome;
-  if (!done) { $('#u-go').onclick = () => { Game.wk = { quick: false, gp: s.round, role: s.role, team: s.team, drv: s.drv, dist: s.dist, ai: s.ai, assist: s.assist }; renderWeekend(); }; requestAnimationFrame(() => drawPreview($('#u-prev'), def)); }
+  if (!done) { $('#u-go').onclick = () => { Game.wk = { quick: false, gp: s.round, role: s.role, team: s.team, drv: s.drv, dist: s.dist, ai: s.ai, assist: s.assist, wx: s.wx || 'rand' }; renderWeekend(); }; requestAnimationFrame(() => drawPreview($('#u-prev'), def)); }
   else $('#u-again').onclick = () => { Object.assign(s, { round: 0, pts: {}, tpts: {}, results: [], dev: {}, budget: s.budget + 4 }); Store.save(s); renderHub(); };
   $$('[data-upg]', el).forEach(b => b.onclick = () => { const k = b.dataset.upg, cost = 4 + s.upg[k] * 3; if (s.budget < cost) return; s.budget -= cost; s.upg[k]++; if (k === 'aero' || k === 'engine') s.dev[s.team] = (s.dev[s.team] || 0) + .05; Store.save(s); renderHub(); toast('Amélioration installée pour le prochain Grand Prix.'); });
   show('scr-hub');
 }
 
 /* ---------------- WEEK-END : QUALIFS + PRÉPARATION ---------------- */
-function makeWeather(T, laps) {
+const WX = [
+  { k: 'rand', n: 'Aléatoire', h: 'Selon le climat du circuit' },
+  { k: 'dry', n: 'Sec', h: 'Grand soleil toute la course' },
+  { k: 'shower', n: 'Averse', h: 'Départ au sec, la pluie arrive pendant la course' },
+  { k: 'wet', n: 'Pluie', h: 'Pluie modérée toute la course (intermédiaires)' },
+  { k: 'storm', n: 'Déluge', h: 'Forte pluie toute la course (pneus pluie)' },
+];
+function makeWeather(T, laps, wx = 'rand') {
   const segs = [], p = T.info.rain;
+  if (wx === 'dry') return { segs };
+  if (wx === 'shower') { const from = rand(.15, .45) * laps; segs.push({ from, to: from + Math.max(2, rand(.3, .5) * laps), r: rand(.6, 1) }); return { segs }; }
+  if (wx === 'wet') { segs.push({ from: -1, to: laps + 5, r: rand(.45, .65) }); return { segs }; }
+  if (wx === 'storm') { segs.push({ from: -1, to: laps + 5, r: rand(.9, 1) }); return { segs }; }
   if (Math.random() < p) {
     const wetStart = Math.random() < .25, from = wetStart ? -1 : rand(.12, .55) * laps, len = Math.max(2, rand(.25, .55) * laps);
     segs.push({ from, to: from + len + (wetStart ? 1 : 0), r: rand(.35, 1) });
@@ -6864,13 +6878,14 @@ function renderWeekend() {
   const wk = Game.wk, def = TRACKS[wk.gp], T = getTrack(wk.gp), team = TEAM[wk.team];
   setTeamVars(team); applyDev();
   wk.laps = wk.laps || DISTS.find(x => x.k === wk.dist).f(def.laps);
-  wk.weather = wk.weather || makeWeather(T, wk.laps);
+  wk.wx = wk.wx || 'rand';
+  wk.weather = wk.weather || makeWeather(T, wk.laps, wk.wx);
   const mine = wk.role === 'manager' ? team.drivers : wk.duo ? [DRV[wk.drv], DRV[wk.drv2]] : [DRV[wk.drv]];
   wk.comp = wk.comp || {};
   const wetStart = wk.weather.segs.some(s => s.from < 0);
   mine.forEach(d => { if (!wk.comp[d.code] || (wetStart !== isWetTyre(wk.comp[d.code]))) wk.comp[d.code] = wetStart ? (wk.weather.segs[0].r > .72 ? 'W' : 'I') : 'M'; });
   const rainSeg = wk.weather.segs[0];
-  const fc = !rainSeg ? ic('sun') + ' Sec pendant toute la course' : rainSeg.from < 0 ? `${ic('rain')} Départ sous la pluie (${rainSeg.r > .72 ? 'forte' : 'modérée'})` : `${ic('sunrain')} Pluie probable vers le tour ${Math.max(1, Math.round(rainSeg.from))} (≈ ${Math.round(rainSeg.to - rainSeg.from)} tours)`;
+  const fc = !rainSeg ? ic('sun') + ' Sec pendant toute la course' : rainSeg.from < 0 ? `${ic('rain')} ${rainSeg.to >= wk.laps ? 'Pluie toute la course' : 'Départ sous la pluie'} (${rainSeg.r > .72 ? 'forte' : 'modérée'})` : `${ic('sunrain')} Pluie probable vers le tour ${Math.max(1, Math.round(rainSeg.from))} (≈ ${Math.round(rainSeg.to - rainSeg.from)} tours)`;
   const el = $('#scr-weekend');
   el.innerHTML = `<div class="wrap">
     <div class="topbar"><button class="btn small" id="k-back">${ic('left')} ${wk.quick ? 'Retour' : 'Saison'}</button><h2>${flagSVG(def.flag)} ${esc(gpName(def))}</h2><span class="chip">${esc(def.name)}</span></div>
@@ -6878,6 +6893,7 @@ function renderWeekend() {
       <div class="card" style="display:grid;gap:10px">
         <canvas id="k-prev" style="width:100%;height:200px"></canvas>
         <div class="muted">${(def.len / 1000).toFixed(3).replace('.', ',')} km · ${wk.laps} tours · ${T.info.street ? 'circuit urbain' : 'circuit permanent'}${T.info.night ? ' · course de nuit' : ''}</div>
+        ${wk.multi && !Game.mp?.owner ? '' : `<div class="opt"><label>Météo</label><div class="seg" id="k-wx">${WX.map(x => `<button data-v="${x.k}" class="${wk.wx === x.k ? 'on' : ''}" title="${x.h}">${x.n}</button>`).join('')}</div></div>`}
         <div><b>Prévisions météo</b><br>${fc}</div>
         <div class="opt"><label>Durée</label><div class="seg" id="k-dist">${DISTS.map(x => `<button data-v="${x.k}" class="${wk.dist === x.k ? 'on' : ''}">${x.n}</button>`).join('')}</div></div>
         ${wk.role === 'pilot' ? `<div class="opt"><label>Aides</label><div class="seg" id="k-as">${ASSISTS.map((x, i) => `<button data-v="${i}" class="${wk.assist === i ? 'on' : ''}" title="${x.d}">${x.n}</button>`).join('')}</div></div>
@@ -6897,7 +6913,8 @@ function renderWeekend() {
     </div></div>`;
   requestAnimationFrame(() => drawPreview($('#k-prev'), def));
   $('#k-back').onclick = () => wk.multi ? renderLobby() : wk.quick ? renderSetup('quick') : renderHub();
-  $$('#k-dist button').forEach(b => b.onclick = () => { wk.dist = b.dataset.v; wk.laps = DISTS.find(x => x.k === wk.dist).f(def.laps); wk.weather = makeWeather(T, wk.laps); wk.grid = wk.grid && wk.grid; if (!wk.quick) { Game.save.dist = wk.dist; Store.save(Game.save); } renderWeekend(); });
+  $$('#k-dist button').forEach(b => b.onclick = () => { wk.dist = b.dataset.v; wk.laps = DISTS.find(x => x.k === wk.dist).f(def.laps); wk.weather = makeWeather(T, wk.laps, wk.wx); wk.grid = wk.grid && wk.grid; if (!wk.quick) { Game.save.dist = wk.dist; Store.save(Game.save); } renderWeekend(); });
+  $$('#k-wx button').forEach(b => b.onclick = () => { wk.wx = b.dataset.v; wk.weather = makeWeather(T, wk.laps, wk.wx); if (!wk.quick) { Game.save.wx = wk.wx; Store.save(Game.save); } renderWeekend(); });
   $$('#k-as button').forEach(b => b.onclick = () => { wk.assist = +b.dataset.v; if (!wk.quick) { Game.save.assist = wk.assist; Store.save(Game.save); } renderWeekend(); });
   $$('#k-ai button').forEach(b => b.onclick = () => { wk.ai = +b.dataset.v; if (!wk.quick) { Game.save.ai = wk.ai; Store.save(Game.save); } renderWeekend(); });
   $$('[data-comp]').forEach(g => $$('button', g).forEach(b => b.onclick = () => { wk.comp[g.dataset.comp] = b.dataset.v; renderWeekend(); }));
